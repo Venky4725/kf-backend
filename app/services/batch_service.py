@@ -102,6 +102,8 @@ class BatchService(CRUDService[Batch]):
             raise ConflictError(f"Profile '{team_lead_id}' does not exist.")
         if profile.role != "TECHNICAL_LEAD":
             raise ValidationError("Assigned team lead must have role TECHNICAL_LEAD.")
+        if not profile.is_active:
+            raise ValidationError("Cannot assign inactive tech lead to batch.")
 
 
 batch_service = BatchService()
