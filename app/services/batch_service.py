@@ -67,34 +67,55 @@ class BatchService(CRUDService[Batch]):
         return self.update(db, batch_id, updates)
 
     def delete(self, db: Session, batch_id: UUID) -> None:
-        # Check for dependent profiles
-        profile_count = db.query(Profile).filter(Profile.batch_id == batch_id).count()
-        task_count = db.query(Task).filter(Task.batch_id == batch_id).count()
-
-        dependent_records = []
-        if profile_count > 0:
-            dependent_records.append(f"{profile_count} profile(s)")
-        if task_count > 0:
-            dependent_records.append(f"{task_count} task(s)")
-
-        if dependent_records:
-            raise ConflictError(
-                f"Cannot delete batch: has {', '.join(dependent_records)}. "
-                f"Remove or reassign these records first."
-            )
-
-        # Also check if batch has a team lead assigned
+        """
+        Delete a batch with automatic cleanup of dependencies.
+        
+        This method will:
+        1. Unassign all profiles from the batch (set batch_id to NULL)
+        2. Unassign all tasks from the batch (set batch_id to NULL)
+        3. Delete the batch record
+        
+        This ensures clean deletion even if the assigned tech lead is deactivated.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Get the batch first to ensure it exists
         batch = self.get(db, batch_id)
-        if batch and batch.team_lead_id is not None:
-            # Optionally warn or prevent - for now we allow deletion if no other dependents
-            pass
-
-        # Proceed with deletion
-        instance = self.get(db, batch_id)
-        from app.services.audit import add_audit_log
-        add_audit_log(db, action="DELETE", table_name=self.table_name, record_id=batch_id)
-        db.delete(instance)
+        logger.info(f"Deleting batch: {batch.name} (ID: {batch_id})")
+        
+        # Step 1: Unassign all profiles from this batch
+        profile_count = db.query(Profile).filter(Profile.batch_id == batch_id).count()
+        if profile_count > 0:
+            logger.info(f"Unassigning {profile_count} profile(s) from batch")
+            db.query(Profile).filter(Profile.batch_id == batch_id).update(
+                {"batch_id": None},
+                synchronize_session=False
+            )
+            db.flush()
+        
+        # Step 2: Unassign all tasks from this batch
+        task_count = db.query(Task).filter(Task.batch_id == batch_id).count()
+        if task_count > 0:
+            logger.info(f"Unassigning {task_count} task(s) from batch")
+            db.query(Task).filter(Task.batch_id == batch_id).update(
+                {"batch_id": None},
+                synchronize_session=False
+            )
+            db.flush()
+        
+        # Step 3: Add audit log
+        try:
+            from app.services.audit import add_audit_log
+            add_audit_log(db, action="DELETE", table_name=self.table_name, record_id=batch_id)
+        except Exception as e:
+            logger.warning(f"Could not add audit log: {e}")
+        
+        # Step 4: Delete the batch
+        db.delete(batch)
         self._commit(db)
+        
+        logger.info(f"Successfully deleted batch: {batch.name} (unassigned {profile_count} profiles, {task_count} tasks)")
 
     def _ensure_team_lead(self, db: Session, team_lead_id: UUID) -> None:
         profile = db.get(Profile, team_lead_id)
