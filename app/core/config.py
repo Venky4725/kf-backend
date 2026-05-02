@@ -18,10 +18,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = ""
     ENVIRONMENT: str = "development"
 
-    # Admin credentials - configurable via .env file (ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD)
-    ADMIN_EMAIL: str = "pravalikan@coastalseven.com"
-    ADMIN_NAME: str = "Pravalika N"
-    ADMIN_PASSWORD: str = "admin123"
+
 
     # --- SMTP / Outlook email settings ---
     # If SMTP_HOST + SMTP_USER + SMTP_PASSWORD are set, real emails will be sent.
