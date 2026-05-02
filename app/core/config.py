@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS: str = ""
     ENVIRONMENT: str = "development"
+    
+    ADMIN_EMAIL: str = "pravalikan@coastalseven.com"
+    ADMIN_NAME: str = "Pravalika N"
+    ADMIN_PASSWORD: str = "admin123"
 
 
 
