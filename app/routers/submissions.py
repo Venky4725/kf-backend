@@ -7,13 +7,20 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.submission import SubmissionCreate, SubmissionResponse, SubmissionUpdate
+from app.schemas.submission import (
+    SubmissionCreate,
+    SubmissionResponse,
+    SubmissionUpdate,
+)
 from app.services.submission_service import submission_service
 
-router = APIRouter(prefix="/submissions", tags=["Submissions"])
+router = APIRouter(
+    prefix="/submissions",
+    tags=["Submissions"],
+)
 
 
-@router.get("/", response_model=list[SubmissionResponse])
+@router.get("", response_model=list[SubmissionResponse])
 def get_submissions(
     skip: int = 0,
     limit: int = 100,
@@ -21,7 +28,13 @@ def get_submissions(
     submitted_for: date | None = None,
     db: Session = Depends(get_db),
 ):
-    return submission_service.list_submissions(db, skip=skip, limit=limit, user_id=user_id, submitted_for=submitted_for)
+    return submission_service.list_submissions(
+        db,
+        skip=skip,
+        limit=limit,
+        user_id=user_id,
+        submitted_for=submitted_for,
+    )
 
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
@@ -32,7 +45,11 @@ def get_submission(
     return submission_service.get(db, submission_id)
 
 
-@router.post("/", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SubmissionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_submission(
     payload: SubmissionCreate,
     db: Session = Depends(get_db),
@@ -46,10 +63,17 @@ def update_submission(
     payload: SubmissionUpdate,
     db: Session = Depends(get_db),
 ):
-    return submission_service.update_submission(db, submission_id, payload)
+    return submission_service.update_submission(
+        db,
+        submission_id,
+        payload,
+    )
 
 
-@router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{submission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 def delete_submission(
     submission_id: UUID,
     db: Session = Depends(get_db),
