@@ -9,10 +9,7 @@ from app.db.session import get_db
 from app.schemas.batch import BatchCreate, BatchResponse, BatchUpdate
 from app.services.batch_service import batch_service
 
-router = APIRouter(
-    prefix="/batches",
-    tags=["Batches"],
-)
+router = APIRouter(prefix="/batches", tags=["Batches"])
 
 
 @router.get("", response_model=list[BatchResponse])
@@ -22,12 +19,7 @@ def get_batches(
     team_lead_id: UUID | None = None,
     db: Session = Depends(get_db),
 ):
-    return batch_service.list_batches(
-        db,
-        skip=skip,
-        limit=limit,
-        team_lead_id=team_lead_id,
-    )
+    return batch_service.list_batches(db, skip=skip, limit=limit, team_lead_id=team_lead_id)
 
 
 @router.get("/{batch_id}", response_model=BatchResponse)
@@ -38,11 +30,7 @@ def get_batch(
     return batch_service.get(db, batch_id)
 
 
-@router.post(
-    "",
-    response_model=BatchResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", response_model=BatchResponse, status_code=status.HTTP_201_CREATED)
 def create_batch(
     payload: BatchCreate,
     db: Session = Depends(get_db),
@@ -56,17 +44,10 @@ def update_batch(
     payload: BatchUpdate,
     db: Session = Depends(get_db),
 ):
-    return batch_service.update_batch(
-        db,
-        batch_id,
-        payload,
-    )
+    return batch_service.update_batch(db, batch_id, payload)
 
 
-@router.delete(
-    "/{batch_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
+@router.delete("/{batch_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_batch(
     batch_id: UUID,
     db: Session = Depends(get_db),

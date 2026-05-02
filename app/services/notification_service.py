@@ -52,8 +52,11 @@ class NotificationService(CRUDService[Notification]):
     def _ensure_profile_exists(self, db: Session, profile_id: UUID) -> None:
         from app.models.profile import Profile
 
-        if db.get(Profile, profile_id) is None:
+        profile = db.get(Profile, profile_id)
+        if profile is None:
             raise ConflictError(f"Profile '{profile_id}' does not exist.")
+        if not profile.is_active:
+            raise ConflictError(f"Cannot send notification to inactive user.")
 
 
 notification_service = NotificationService()

@@ -63,7 +63,7 @@ class ProfileService(CRUDService[Profile]):
         role: str | None = None,
         batch_id: UUID | None = None,
     ) -> list[Profile]:
-        query = db.query(Profile)
+        query = db.query(Profile).filter(Profile.is_active == True)
         if role:
             query = query.filter(Profile.role == role.strip().upper())
         if batch_id:
