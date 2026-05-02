@@ -39,6 +39,7 @@ app = FastAPI(
     version="1.0.0",
     description="Knowledge Factory backend for intern, batch, task, and evaluation management.",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
  
 def _split_origins(value: str) -> list[str]:
