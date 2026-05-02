@@ -62,13 +62,60 @@ class ProfileService(CRUDService[Profile]):
         limit: int = 100,
         role: str | None = None,
         batch_id: UUID | None = None,
+        search_name: str | None = None,
+        search_email: str | None = None,
+        tech_stack: str | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
     ) -> list[Profile]:
+        from app.models.batch import Batch
+        from sqlalchemy import or_, asc, desc
+        
+        # Start with base query - only active profiles
         query = db.query(Profile).filter(Profile.is_active == True)
+        
+        # Apply role filter
         if role:
             query = query.filter(Profile.role == role.strip().upper())
+        
+        # Apply batch_id filter
         if batch_id:
             query = query.filter(Profile.batch_id == batch_id)
-        return query.order_by(Profile.created_at.desc()).offset(skip).limit(limit).all()
+        
+        # Apply search filters (case-insensitive partial match)
+        if search_name:
+            query = query.filter(Profile.name.ilike(f"%{search_name}%"))
+        
+        if search_email:
+            query = query.filter(Profile.email.ilike(f"%{search_email}%"))
+        
+        # Apply tech_stack filter (exact match, case-insensitive)
+        if tech_stack:
+            query = query.filter(Profile.tech_stack.ilike(tech_stack))
+        
+        # Apply sorting with whitelist validation
+        VALID_SORT_FIELDS = {"name", "email", "tech_stack", "batch"}
+        
+        if sort_by and sort_by.lower() in VALID_SORT_FIELDS:
+            sort_field = sort_by.lower()
+            order_func = desc if sort_order and sort_order.lower() == "desc" else asc
+            
+            if sort_field == "batch":
+                # Join with Batch table to sort by batch name
+                query = query.outerjoin(Batch, Profile.batch_id == Batch.id)
+                query = query.order_by(order_func(Batch.name))
+            elif sort_field == "name":
+                query = query.order_by(order_func(Profile.name))
+            elif sort_field == "email":
+                query = query.order_by(order_func(Profile.email))
+            elif sort_field == "tech_stack":
+                query = query.order_by(order_func(Profile.tech_stack))
+        else:
+            # Default sorting by created_at desc
+            query = query.order_by(Profile.created_at.desc())
+        
+        # Apply pagination
+        return query.offset(skip).limit(limit).all()
 
     def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate) -> Profile:
         # Get the existing profile first

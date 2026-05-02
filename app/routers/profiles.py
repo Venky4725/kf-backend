@@ -22,9 +22,25 @@ def get_profiles(
     limit: int = 100,
     role: str | None = None,
     batch_id: UUID | None = None,
+    search_name: str | None = None,
+    search_email: str | None = None,
+    tech_stack: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
     db: Session = Depends(get_db),
 ):
-    return profile_service.list_profiles(db, skip=skip, limit=limit, role=role, batch_id=batch_id)
+    return profile_service.list_profiles(
+        db,
+        skip=skip,
+        limit=limit,
+        role=role,
+        batch_id=batch_id,
+        search_name=search_name,
+        search_email=search_email,
+        tech_stack=tech_stack,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
 
 
 @router.get("/{profile_id}", response_model=ProfileResponse)
