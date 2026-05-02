@@ -32,6 +32,12 @@ def run_startup_checks() -> None:
             "Update it before production deployment."
         )
 
+    if settings.ADMIN_PASSWORD == "admin123":
+        logger.warning(
+            "ADMIN_PASSWORD is using the default value. "
+            "Update it before production deployment."
+        )
+
     logger.info(
         "Authentication: Using database-based password hashing "
         "from public.profiles table."
