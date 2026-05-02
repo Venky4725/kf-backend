@@ -14,7 +14,10 @@ from app.schemas.auth import (
 from app.schemas.profile import ProfileResponse
 from app.services.auth_service import auth_service
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["Auth"],
+)
 
 
 @router.post("/login", response_model=LoginResponse)
