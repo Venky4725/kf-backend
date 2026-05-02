@@ -1,0 +1,236 @@
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+
+from app.core.security import hash_password
+from app.models.profile import Profile
+from app.schemas.profile import ProfileCreate, ProfileUpdate
+from app.services.base import CRUDService
+from app.services.exceptions import ConflictError, ValidationError
+
+VALID_PROFILE_ROLES = {"ADMIN", "TECHNICAL_LEAD", "INTERN"}
+
+# Default password for new users
+DEFAULT_PASSWORD = "Welcome@123"
+
+
+class ProfileService(CRUDService[Profile]):
+    model = Profile
+    resource_name = "Profile"
+    table_name = "profiles"
+
+    def create_profile(self, db: Session, payload: ProfileCreate) -> Profile:
+        role = payload.role.strip().upper()
+        if role not in VALID_PROFILE_ROLES:
+            raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
+        if payload.batch_id is not None:
+            self._ensure_batch_exists(db, payload.batch_id)
+
+        # Generate password hash for default password
+        password_hash = hash_password(DEFAULT_PASSWORD)
+        
+        # Normalize email
+        normalized_email = payload.email.lower().strip()
+        
+        # Check if email already exists
+        existing = db.query(Profile).filter(Profile.email == normalized_email).first()
+        if existing:
+            from app.services.exceptions import ConflictError
+            raise ConflictError(f"A profile with email '{normalized_email}' already exists (Name: {existing.name}, Role: {existing.role}).")
+
+        return self.create(
+            db,
+            {
+                "id": uuid4(),
+                "name": payload.name.strip(),
+                "email": normalized_email,
+                "role": role,
+                "tech_stack": payload.tech_stack,
+                "batch_id": payload.batch_id,
+                "password_hash": password_hash,
+                "must_change_password": True,
+                "is_active": True,
+            },
+        )
+
+    def list_profiles(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        role: str | None = None,
+        batch_id: UUID | None = None,
+    ) -> list[Profile]:
+        query = db.query(Profile)
+        if role:
+            query = query.filter(Profile.role == role.strip().upper())
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+        return query.order_by(Profile.created_at.desc()).offset(skip).limit(limit).all()
+
+    def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate) -> Profile:
+        # Get the existing profile first
+        existing_profile = self.get(db, profile_id)
+        
+        updates = payload.model_dump(exclude_unset=True)
+        
+        # Validate batch exists if being updated
+        if "batch_id" in updates and updates["batch_id"] is not None:
+            self._ensure_batch_exists(db, updates["batch_id"])
+        
+        # Normalize name if being updated
+        if "name" in updates and updates["name"] is not None:
+            updates["name"] = updates["name"].strip()
+        
+        # Handle email update with uniqueness check
+        if "email" in updates and updates["email"] is not None:
+            normalized_email = updates["email"].lower().strip()
+            
+            # Only check for duplicates if email is actually changing
+            if normalized_email != existing_profile.email:
+                existing_with_email = db.query(Profile).filter(
+                    Profile.email == normalized_email,
+                    Profile.id != profile_id
+                ).first()
+                
+                if existing_with_email:
+                    raise ConflictError(
+                        f"Email '{normalized_email}' is already in use by another profile "
+                        f"(Name: {existing_with_email.name}, Role: {existing_with_email.role})."
+                    )
+            
+            updates["email"] = normalized_email
+        
+        return self.update(db, profile_id, updates)
+
+    def delete_profile(self, db: Session, profile_id: UUID) -> None:
+        """
+        Delete a profile with proper dependency handling.
+        For Technical Leads: unassigns from batches before deletion.
+        For all profiles: checks for blocking dependencies.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Get the profile
+        profile = self.get(db, profile_id)
+        logger.info(f"Attempting to delete profile: {profile.name} ({profile.role})")
+        
+        # Import models here to avoid circular imports
+        from app.models.batch import Batch
+        from app.models.evaluation import Evaluation
+        from app.models.submission import Submission
+        from app.models.notification import Notification
+        
+        # Check dependencies and provide detailed error messages
+        dependencies = []
+        
+        # Check if TL is assigned to batches
+        if profile.role == "TECHNICAL_LEAD":
+            assigned_batches = db.query(Batch).filter(Batch.team_lead_id == profile_id).all()
+            if assigned_batches:
+                batch_names = [b.name for b in assigned_batches]
+                dependencies.append(f"assigned as Team Lead to {len(assigned_batches)} batch(es): {', '.join(batch_names)}")
+                logger.info(f"Found {len(assigned_batches)} batches assigned to TL")
+        
+        # Check if profile has evaluations (as reviewer)
+        try:
+            evaluations_count = db.query(Evaluation).filter(Evaluation.reviewed_by == profile_id).count()
+            if evaluations_count > 0:
+                dependencies.append(f"has {evaluations_count} evaluation(s) as reviewer")
+                logger.info(f"Found {evaluations_count} evaluations")
+        except Exception as e:
+            logger.warning(f"Could not check evaluations: {e}")
+        
+        # Check if profile has submissions
+        try:
+            submissions_count = db.query(Submission).filter(Submission.submitted_by == profile_id).count()
+            if submissions_count > 0:
+                dependencies.append(f"has {submissions_count} submission(s)")
+                logger.info(f"Found {submissions_count} submissions")
+        except Exception as e:
+            logger.warning(f"Could not check submissions: {e}")
+        
+        # Check if profile has notifications
+        try:
+            notifications_count = db.query(Notification).filter(Notification.user_id == profile_id).count()
+            if notifications_count > 0:
+                dependencies.append(f"has {notifications_count} notification(s)")
+                logger.info(f"Found {notifications_count} notifications")
+        except Exception as e:
+            logger.warning(f"Could not check notifications: {e}")
+        
+        # If there are dependencies, provide detailed error
+        if dependencies:
+            dependency_list = "; ".join(dependencies)
+            error_msg = (
+                f"Cannot delete {profile.name} ({profile.role}). "
+                f"This profile {dependency_list}. "
+                f"Please remove these dependencies first or use deactivation instead."
+            )
+            logger.error(error_msg)
+            raise ConflictError(error_msg)
+        
+        # If TL has no dependencies, unassign from batches (safety check)
+        if profile.role == "TECHNICAL_LEAD":
+            updated = db.query(Batch).filter(Batch.team_lead_id == profile_id).update({"team_lead_id": None})
+            logger.info(f"Unassigned TL from {updated} batches")
+            db.flush()
+        
+        # Add audit log
+        try:
+            from app.services.audit import add_audit_log
+            add_audit_log(db, action="DELETE", table_name=self.table_name, record_id=profile_id)
+        except Exception as e:
+            logger.warning(f"Could not add audit log: {e}")
+        
+        # Now safe to delete
+        try:
+            db.delete(profile)
+            db.commit()
+            logger.info(f"Successfully deleted profile: {profile.name}")
+        except IntegrityError as exc:
+            db.rollback()
+            logger.error(f"IntegrityError during delete: {exc}")
+            # Provide detailed error message
+            detail = str(exc.orig).lower() if exc.orig else str(exc).lower()
+            if "foreign key" in detail:
+                raise ConflictError(
+                    f"Cannot delete {profile.name}. This profile is still referenced by other records. "
+                    f"Please remove all dependencies first."
+                )
+            raise ConflictError(f"Unable to delete profile due to database constraint: {detail}")
+        except Exception as exc:
+            db.rollback()
+            logger.error(f"Unexpected error during delete: {exc}")
+            raise ConflictError(f"Failed to delete profile: {str(exc)}")
+    
+    def deactivate_profile(self, db: Session, profile_id: UUID) -> Profile:
+        """
+        Soft delete: deactivate a profile instead of deleting.
+        This preserves data integrity and history.
+        """
+        profile = self.get(db, profile_id)
+        profile.is_active = False
+        db.commit()
+        db.refresh(profile)
+        return profile
+    
+    def activate_profile(self, db: Session, profile_id: UUID) -> Profile:
+        """Reactivate a deactivated profile."""
+        profile = self.get(db, profile_id)
+        profile.is_active = True
+        db.commit()
+        db.refresh(profile)
+        return profile
+
+    def _ensure_batch_exists(self, db: Session, batch_id: UUID) -> None:
+        from app.models.batch import Batch
+
+        if db.get(Batch, batch_id) is None:
+            raise ConflictError(f"Batch '{batch_id}' does not exist.")
+
+
+profile_service = ProfileService()
