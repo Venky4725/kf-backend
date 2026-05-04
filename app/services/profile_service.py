@@ -67,12 +67,20 @@ class ProfileService(CRUDService[Profile]):
         tech_stack: str | None = None,
         sort_by: str | None = None,
         sort_order: str | None = None,
+        is_active: bool | None = None,
     ) -> list[Profile]:
         from app.models.batch import Batch
         from sqlalchemy import or_, asc, desc
         
-        # Start with base query - only active profiles
-        query = db.query(Profile).filter(Profile.is_active == True)
+        # Start with base query
+        query = db.query(Profile)
+        
+        # Apply is_active filter
+        if is_active is not None:
+            query = query.filter(Profile.is_active == is_active)
+        else:
+            # Default: only show active profiles
+            query = query.filter(Profile.is_active == True)
         
         # Apply role filter
         if role:

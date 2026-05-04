@@ -27,6 +27,7 @@ def get_profiles(
     tech_stack: str | None = None,
     sort_by: str | None = None,
     sort_order: str | None = None,
+    is_active: bool | None = None,
     db: Session = Depends(get_db),
 ):
     return profile_service.list_profiles(
@@ -40,6 +41,7 @@ def get_profiles(
         tech_stack=tech_stack,
         sort_by=sort_by,
         sort_order=sort_order,
+        is_active=is_active,
     )
 
 
