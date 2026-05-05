@@ -57,8 +57,12 @@ class SubmissionService(CRUDService[Submission]):
         order: str | None = None,
     ) -> list[Submission]:
         try:
-            # Start with base query - always join with Profile for search and name display
-            query = db.query(Submission).join(Profile, Submission.user_id == Profile.id)
+            # Start with base query - join with Profile and Batch for complete data
+            query = (
+                db.query(Submission)
+                .join(Profile, Submission.user_id == Profile.id)
+                .outerjoin(Batch, Profile.batch_id == Batch.id)  # LEFT JOIN for batch
+            )
             
             # Filter by user_id
             if user_id:
@@ -109,18 +113,27 @@ class SubmissionService(CRUDService[Submission]):
             # Apply pagination
             submissions = query.offset(skip).limit(limit).all()
             
-            # Add submitted_by_name (already joined with profile)
+            # Add submitted_by_name and batch_name from joined data
             result = []
             for sub in submissions:
                 try:
+                    # Get profile and batch info
                     profile = db.query(Profile).filter(Profile.id == sub.user_id).first()
                     if profile:
                         sub.submitted_by_name = profile.name
+                        # Get batch name if profile has batch
+                        if profile.batch_id:
+                            batch = db.get(Batch, profile.batch_id)
+                            sub.batch_name = batch.name if batch else None
+                        else:
+                            sub.batch_name = None
                     else:
                         sub.submitted_by_name = None
+                        sub.batch_name = None
                 except Exception as e:
-                    logger.error(f"Error fetching profile for submission: {e}")
+                    logger.error(f"Error fetching profile/batch for submission: {e}")
                     sub.submitted_by_name = None
+                    sub.batch_name = None
                 result.append(sub)
             
             return result
