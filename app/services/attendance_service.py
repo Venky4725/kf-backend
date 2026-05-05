@@ -158,124 +158,110 @@ class AttendanceService(CRUDService[Attendance]):
         current_user=None,
     ) -> list[Attendance]:
         import logging
-        from sqlalchemy import asc, desc, func, or_
-        from sqlalchemy.orm import joinedload
+        from sqlalchemy import asc, desc, func
         from app.models.profile import Profile
         from app.models.batch import Batch
         
         logger = logging.getLogger(__name__)
         
-        try:
-            # Base query with INNER joins to ensure batch exists
-            # Using join (not outerjoin) ensures only interns WITH batches are returned
-            query = db.query(Attendance).join(
-                Profile, Attendance.user_id == Profile.id
-            ).join(
-                Batch, Profile.batch_id == Batch.id  # INNER JOIN - excludes NULL batches
-            )
+        # Log the request
+        if current_user:
+            logger.info(f"list_attendance called by {current_user.id} ({current_user.role})")
+        
+        # Base query with INNER joins to ensure batch exists
+        # Using join (not outerjoin) ensures only interns WITH batches are returned
+        query = db.query(Attendance).join(
+            Profile, Attendance.user_id == Profile.id
+        ).join(
+            Batch, Profile.batch_id == Batch.id  # INNER JOIN - excludes NULL batches
+        )
+        
+        # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            # Filter by batches where this Tech Lead is assigned
+            query = query.filter(Batch.tech_lead_id == current_user.id)
+            logger.info(f"Tech Lead filter applied: tech_lead_id={current_user.id}")
             
-            # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
-            if current_user and current_user.role == "TECHNICAL_LEAD":
-                # Filter by batches where this Tech Lead is assigned
-                query = query.filter(Batch.tech_lead_id == current_user.id)
-                logger.info(f"Tech Lead filter applied: tech_lead_id={current_user.id}")
+            # Debug: Log batches assigned to this Tech Lead
+            tech_lead_batches = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).all()
+            batch_ids = [str(b.id) for b in tech_lead_batches]
+            logger.info(f"Tech Lead {current_user.id} leads batches: {batch_ids}")
+            
+            # Check if Tech Lead has any batches
+            if len(tech_lead_batches) == 0:
+                logger.warning(f"Tech Lead {current_user.id} is not assigned to any batches")
+                return []  # Tech Lead not assigned to any batch - this is valid, not an error
+        
+        # Filter by user_id
+        if user_id:
+            query = query.filter(Attendance.user_id == user_id)
+        
+        # Filter by date range (start/end)
+        if start:
+            query = query.filter(Attendance.day >= start)
+        if end:
+            query = query.filter(Attendance.day <= end)
+        
+        # Filter by specific date
+        if attendance_date:
+            query = query.filter(Attendance.day == attendance_date)
+        
+        # Filter by batch_id
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+        
+        # Filter by status
+        if status:
+            normalized_status = status.strip().upper()
+            if normalized_status in VALID_ATTENDANCE_STATUSES:
+                query = query.filter(Attendance.status == normalized_status)
+        
+        # Search by user name (case-insensitive partial match)
+        if search and search.strip():
+            search_term = f"%{search.strip().lower()}%"
+            query = query.filter(func.lower(Profile.name).like(search_term))
+        
+        # Sorting
+        VALID_SORT_FIELDS = {"date", "status", "name"}
+        if sort_by and sort_by.lower() in VALID_SORT_FIELDS:
+            order_func = desc if order and order.lower() == "desc" else asc
+            if sort_by.lower() == "date":
+                query = query.order_by(order_func(Attendance.day))
+            elif sort_by.lower() == "status":
+                query = query.order_by(order_func(Attendance.status))
+            elif sort_by.lower() == "name":
+                query = query.order_by(order_func(Profile.name))
+        else:
+            # Default sorting
+            query = query.order_by(Attendance.day.desc(), Attendance.created_at.desc())
+        
+        # Apply pagination
+        results = query.offset(skip).limit(limit).all()
+        
+        # Enhance results with user_name and batch_name
+        for attendance in results:
+            user = db.query(Profile).filter(Profile.id == attendance.user_id).first()
+            if user:
+                attendance.user_name = user.name
+                logger.info(f"Attendance {attendance.id}: user_name={user.name}, batch_id={user.batch_id}")
                 
-                # Debug: Log batches assigned to this Tech Lead
-                tech_lead_batches = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).all()
-                batch_ids = [str(b.id) for b in tech_lead_batches]
-                logger.info(f"Tech Lead {current_user.id} leads batches: {batch_ids}")
-                
-                # Check if Tech Lead has any batches
-                if len(tech_lead_batches) == 0:
-                    logger.warning(f"Tech Lead {current_user.id} is not assigned to any batches")
-                    return []  # Tech Lead not assigned to any batch
-            
-            # Filter by user_id
-            if user_id:
-                query = query.filter(Attendance.user_id == user_id)
-            
-            # Filter by date range (start/end)
-            if start:
-                query = query.filter(Attendance.day >= start)
-            if end:
-                query = query.filter(Attendance.day <= end)
-            
-            # Filter by specific date
-            if attendance_date:
-                query = query.filter(Attendance.day == attendance_date)
-            
-            # Filter by batch_id
-            if batch_id:
-                query = query.filter(Profile.batch_id == batch_id)
-            
-            # Filter by status
-            if status:
-                normalized_status = status.strip().upper()
-                if normalized_status in VALID_ATTENDANCE_STATUSES:
-                    query = query.filter(Attendance.status == normalized_status)
-            
-            # Search by user name (case-insensitive partial match)
-            if search and search.strip():
-                search_term = f"%{search.strip().lower()}%"
-                try:
-                    query = query.filter(func.lower(Profile.name).like(search_term))
-                except Exception as e:
-                    logger.error(f"Error applying search filter: {e}")
-            
-            # Sorting
-            VALID_SORT_FIELDS = {"date", "status", "name"}
-            if sort_by and sort_by.lower() in VALID_SORT_FIELDS:
-                try:
-                    order_func = desc if order and order.lower() == "desc" else asc
-                    if sort_by.lower() == "date":
-                        query = query.order_by(order_func(Attendance.day))
-                    elif sort_by.lower() == "status":
-                        query = query.order_by(order_func(Attendance.status))
-                    elif sort_by.lower() == "name":
-                        query = query.order_by(order_func(Profile.name))
-                except Exception as e:
-                    logger.error(f"Error applying sort: {e}")
-                    # Default sorting
-                    query = query.order_by(Attendance.day.desc(), Attendance.created_at.desc())
-            else:
-                # Default sorting
-                query = query.order_by(Attendance.day.desc(), Attendance.created_at.desc())
-            
-            # Apply pagination
-            results = query.offset(skip).limit(limit).all()
-            
-            # Enhance results with user_name and batch_name
-            for attendance in results:
-                try:
-                    user = db.query(Profile).filter(Profile.id == attendance.user_id).first()
-                    if user:
-                        attendance.user_name = user.name
-                        logger.info(f"Attendance {attendance.id}: user_name={user.name}, batch_id={user.batch_id}")
-                        
-                        if user.batch_id:
-                            batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
-                            if batch:
-                                attendance.batch_name = batch.name
-                                logger.info(f"Attendance {attendance.id}: batch_name={batch.name}")
-                            else:
-                                attendance.batch_name = None
-                                logger.warning(f"Batch {user.batch_id} not found for user {user.id}")
-                        else:
-                            attendance.batch_name = None
-                            logger.info(f"User {user.id} has no batch_id")
+                if user.batch_id:
+                    batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
+                    if batch:
+                        attendance.batch_name = batch.name
+                        logger.info(f"Attendance {attendance.id}: batch_name={batch.name}")
                     else:
-                        attendance.user_name = None
                         attendance.batch_name = None
-                        logger.warning(f"User {attendance.user_id} not found")
-                except Exception as e:
-                    logger.error(f"Error populating attendance {attendance.id}: {e}")
-                    attendance.user_name = None
+                        logger.warning(f"Batch {user.batch_id} not found for user {user.id}")
+                else:
                     attendance.batch_name = None
-            
-            return results
-        except Exception as e:
-            logger.error(f"Error in list_attendance: {e}")
-            return []
+                    logger.info(f"User {user.id} has no batch_id")
+            else:
+                attendance.user_name = None
+                attendance.batch_name = None
+                logger.warning(f"User {attendance.user_id} not found")
+        
+        return results
 
     def update_attendance(self, db: Session, attendance_id: UUID, payload: AttendanceUpdate, current_user=None) -> Attendance:
         import logging
