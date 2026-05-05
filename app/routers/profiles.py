@@ -70,7 +70,7 @@ def update_profile(
     profile_id: UUID,
     payload: ProfileUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(auth_get_current_user),
 ):
     """Update a profile with access control."""
     return profile_service.update_profile(db, profile_id, payload, current_user)
