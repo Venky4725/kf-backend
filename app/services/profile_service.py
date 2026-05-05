@@ -20,12 +20,46 @@ class ProfileService(CRUDService[Profile]):
     resource_name = "Profile"
     table_name = "profiles"
 
-    def create_profile(self, db: Session, payload: ProfileCreate) -> Profile:
+    def create_profile(self, db: Session, payload: ProfileCreate, current_user=None) -> Profile:
+        from sqlalchemy import func
+        from app.models.batch import Batch
+        import logging
+        logger = logging.getLogger(__name__)
+        
         role = payload.role.strip().upper()
         if role not in VALID_PROFILE_ROLES:
             raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
-        if payload.batch_id is not None:
-            self._ensure_batch_exists(db, payload.batch_id)
+        
+        # Validate and normalize batch_name (REQUIRED)
+        if not payload.batch_name or not payload.batch_name.strip():
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="batch_name is required"
+            )
+        
+        batch_name = payload.batch_name.strip()
+        logger.info(f"Creating profile with batch_name: {batch_name}")
+        
+        # Lookup batch by name (case-insensitive)
+        batch = db.query(Batch).filter(
+            func.lower(Batch.name) == batch_name.lower()
+        ).first()
+        
+        # Create batch if it doesn't exist
+        if not batch:
+            logger.info(f"Batch '{batch_name}' not found, creating new batch")
+            batch = Batch(
+                name=batch_name,
+                team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
+            )
+            db.add(batch)
+            db.flush()  # Get the batch ID
+            logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
+        else:
+            logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
+        
+        batch_id = batch.id
 
         # Generate password hash for default password
         password_hash = hash_password(DEFAULT_PASSWORD)
@@ -36,9 +70,9 @@ class ProfileService(CRUDService[Profile]):
         # Check if email already exists
         existing = db.query(Profile).filter(Profile.email == normalized_email).first()
         if existing:
-            from app.services.exceptions import ConflictError
             raise ConflictError(f"A profile with email '{normalized_email}' already exists (Name: {existing.name}, Role: {existing.role}).")
 
+        logger.info(f"Creating profile: {payload.name} ({role}) in batch {batch_name}")
         return self.create(
             db,
             {
@@ -47,7 +81,7 @@ class ProfileService(CRUDService[Profile]):
                 "email": normalized_email,
                 "role": role,
                 "tech_stack": payload.tech_stack,
-                "batch_id": payload.batch_id,
+                "batch_id": batch_id,
                 "password_hash": password_hash,
                 "must_change_password": True,
                 "is_active": True,

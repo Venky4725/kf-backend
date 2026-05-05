@@ -57,12 +57,14 @@ def get_profile(
 def create_profile(
     payload: ProfileCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(auth_get_current_user),
 ):
-    """Create a new profile."""
+    """Create a new profile with required batch_name."""
     import logging
     logger = logging.getLogger(__name__)
     logger.info(f"Creating profile with payload: {payload.model_dump()}")
-    return profile_service.create_profile(db, payload)
+    logger.info(f"Current user: {current_user.id} ({current_user.role})")
+    return profile_service.create_profile(db, payload, current_user)
 
 
 @router.put("/{profile_id}", response_model=ProfileResponse)

@@ -10,7 +10,7 @@ class ProfileCreate(BaseModel):
     email: EmailStr
     role: str
     tech_stack: str | None = None
-    batch_id: UUID | None = None
+    batch_name: str  # REQUIRED - batch name instead of batch_id
 
 
 class ProfileUpdate(BaseModel):
