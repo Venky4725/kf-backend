@@ -126,12 +126,16 @@ class ProfileService(CRUDService[Profile]):
         # Start with base query
         query = db.query(Profile)
         
+        # Track if Batch is already joined
+        batch_joined = False
+        
         # CRITICAL: Role-based access control
         if current_user:
             if current_user.role == "TECHNICAL_LEAD":
                 # Tech Lead can only see interns in batches they lead
                 # Use INNER JOIN to ensure batch exists
                 query = query.join(Batch, Profile.batch_id == Batch.id)
+                batch_joined = True  # Mark that Batch is joined
                 query = query.filter(
                     Profile.role == "INTERN",
                     Batch.tech_lead_id == current_user.id
@@ -177,8 +181,9 @@ class ProfileService(CRUDService[Profile]):
             order_func = desc if sort_order and sort_order.lower() == "desc" else asc
             
             if sort_field == "batch":
-                # Join with Batch table to sort by batch name
-                query = query.outerjoin(Batch, Profile.batch_id == Batch.id)
+                # Only join Batch if not already joined
+                if not batch_joined:
+                    query = query.outerjoin(Batch, Profile.batch_id == Batch.id)
                 query = query.order_by(order_func(Batch.name))
             elif sort_field == "name":
                 query = query.order_by(order_func(Profile.name))
