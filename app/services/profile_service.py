@@ -115,12 +115,33 @@ class ProfileService(CRUDService[Profile]):
         sort_by: str | None = None,
         sort_order: str | None = None,
         is_active: bool | None = None,
+        current_user=None,
     ) -> list[Profile]:
         from app.models.batch import Batch
         from sqlalchemy import or_, asc, desc
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         # Start with base query
         query = db.query(Profile)
+        
+        # CRITICAL: Role-based access control
+        if current_user:
+            if current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can only see interns in batches they lead
+                # Use INNER JOIN to ensure batch exists
+                query = query.join(Batch, Profile.batch_id == Batch.id)
+                query = query.filter(
+                    Profile.role == "INTERN",
+                    Batch.tech_lead_id == current_user.id
+                )
+                logger.info(f"Tech Lead {current_user.id} filter applied to profile list")
+                
+            elif current_user.role == "INTERN":
+                # Interns can only see their own profile
+                query = query.filter(Profile.id == current_user.id)
+                logger.info(f"Intern {current_user.id} filter applied - own profile only")
         
         # Apply is_active filter
         if is_active is not None:
@@ -129,8 +150,8 @@ class ProfileService(CRUDService[Profile]):
             # Default: only show active profiles
             query = query.filter(Profile.is_active == True)
         
-        # Apply role filter
-        if role:
+        # Apply role filter (only if not already filtered by Tech Lead logic)
+        if role and (not current_user or current_user.role != "TECHNICAL_LEAD"):
             query = query.filter(Profile.role == role.strip().upper())
         
         # Apply batch_id filter

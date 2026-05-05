@@ -31,7 +31,14 @@ def get_profiles(
     sort_order: str | None = None,
     is_active: bool | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(auth_get_current_user),
 ):
+    """
+    Get profiles with role-based access control.
+    - ADMIN: Can see all profiles
+    - TECH_LEAD: Can only see interns in batches they lead
+    - INTERN: Can only see their own profile
+    """
     return profile_service.list_profiles(
         db,
         skip=skip,
@@ -44,6 +51,7 @@ def get_profiles(
         sort_by=sort_by,
         sort_order=sort_order,
         is_active=is_active,
+        current_user=current_user,
     )
 
 

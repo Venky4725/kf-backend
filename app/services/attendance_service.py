@@ -166,11 +166,12 @@ class AttendanceService(CRUDService[Attendance]):
         logger = logging.getLogger(__name__)
         
         try:
-            # Base query with joins for search and filtering
+            # Base query with INNER joins to ensure batch exists
+            # Using join (not outerjoin) ensures only interns WITH batches are returned
             query = db.query(Attendance).join(
                 Profile, Attendance.user_id == Profile.id
-            ).outerjoin(
-                Batch, Profile.batch_id == Batch.id
+            ).join(
+                Batch, Profile.batch_id == Batch.id  # INNER JOIN - excludes NULL batches
             )
             
             # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
@@ -179,9 +180,13 @@ class AttendanceService(CRUDService[Attendance]):
                 query = query.filter(Batch.tech_lead_id == current_user.id)
                 logger.info(f"Tech Lead filter applied: tech_lead_id={current_user.id}")
                 
+                # Debug: Log batches assigned to this Tech Lead
+                tech_lead_batches = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).all()
+                batch_ids = [str(b.id) for b in tech_lead_batches]
+                logger.info(f"Tech Lead {current_user.id} leads batches: {batch_ids}")
+                
                 # Check if Tech Lead has any batches
-                batch_count = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).count()
-                if batch_count == 0:
+                if len(tech_lead_batches) == 0:
                     logger.warning(f"Tech Lead {current_user.id} is not assigned to any batches")
                     return []  # Tech Lead not assigned to any batch
             
