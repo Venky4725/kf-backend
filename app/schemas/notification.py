@@ -26,9 +26,9 @@ class NotificationResponse(BaseModel):
     user_id: UUID
     title: str
     message: str
-    type: str | None
+    type: str | None = None
     is_read: bool
-    is_broadcast: bool
+    is_broadcast: bool | None = None
     created_at: datetime
 
     class Config:
