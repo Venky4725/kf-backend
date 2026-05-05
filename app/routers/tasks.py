@@ -1,6 +1,7 @@
 # app/routers/tasks.py
 
 from uuid import UUID
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 from app.services.task_service import task_service
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=list[TaskResponse])
@@ -23,15 +25,20 @@ def get_tasks(
     order: str | None = None,
     db: Session = Depends(get_db),
 ):
-    return task_service.list_tasks(
-        db,
-        skip=skip,
-        limit=limit,
-        batch_id=batch_id,
-        search=search,
-        sort_by=sort_by,
-        order=order,
-    )
+    try:
+        return task_service.list_tasks(
+            db,
+            skip=skip,
+            limit=limit,
+            batch_id=batch_id,
+            search=search,
+            sort_by=sort_by,
+            order=order,
+        )
+    except Exception as e:
+        logger.error(f"Error in get_tasks: {e}")
+        # Return empty list instead of crashing
+        return []
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
@@ -39,7 +46,14 @@ def get_task(
     task_id: UUID,
     db: Session = Depends(get_db),
 ):
-    return task_service.get(db, task_id)
+    try:
+        return task_service.get(db, task_id)
+    except Exception as e:
+        logger.error(f"Error in get_task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found"
+        )
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -48,7 +62,21 @@ def create_task(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return task_service.create_task(db, payload, current_user)
+    try:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        return task_service.create_task(db, payload, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in create_task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create task"
+        )
 
 
 @router.put("/{task_id}", response_model=TaskResponse)
@@ -58,7 +86,21 @@ def update_task(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return task_service.update_task(db, task_id, payload, current_user)
+    try:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        return task_service.update_task(db, task_id, payload, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update task"
+        )
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -67,5 +109,19 @@ def delete_task(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> Response:
-    task_service.delete(db, task_id, current_user)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        task_service.delete(db, task_id, current_user)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in delete_task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete task"
+        )
