@@ -48,9 +48,12 @@ class ProfileService(CRUDService[Profile]):
         
         # Create batch if it doesn't exist
         if not batch:
+            from datetime import datetime
             logger.info(f"Batch '{batch_name}' not found, creating new batch")
             batch = Batch(
                 name=batch_name,
+                tech_stack="General",  # Default tech stack for auto-created batches
+                start_date=datetime.utcnow().date(),  # Set to current date
                 team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
             )
             db.add(batch)
