@@ -13,12 +13,12 @@ class AttendanceCreate(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v: str) -> str:
-        """Normalize and validate status"""
-        # Normalize to uppercase
-        normalized = v.strip().upper()
+        """Normalize and validate status - MUST BE LOWERCASE for PostgreSQL enum"""
+        # Normalize to lowercase (database enum is lowercase)
+        normalized = v.strip().lower()
         
-        # Valid statuses
-        valid_statuses = {"PRESENT", "ABSENT", "LATE", "LEAVE"}
+        # Valid statuses (lowercase to match database enum)
+        valid_statuses = {"present", "absent", "late", "leave"}
         
         if normalized not in valid_statuses:
             raise ValueError(f"Status must be one of: {', '.join(sorted(valid_statuses))}")
@@ -35,12 +35,12 @@ class AttendanceUpdate(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v: str) -> str:
-        """Normalize and validate status"""
-        # Normalize to uppercase
-        normalized = v.strip().upper()
+        """Normalize and validate status - MUST BE LOWERCASE for PostgreSQL enum"""
+        # Normalize to lowercase (database enum is lowercase)
+        normalized = v.strip().lower()
         
-        # Valid statuses
-        valid_statuses = {"PRESENT", "ABSENT", "LATE", "LEAVE"}
+        # Valid statuses (lowercase to match database enum)
+        valid_statuses = {"present", "absent", "late", "leave"}
         
         if normalized not in valid_statuses:
             raise ValueError(f"Status must be one of: {', '.join(sorted(valid_statuses))}")

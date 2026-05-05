@@ -8,7 +8,8 @@ from app.schemas.attendance import AttendanceCreate, AttendanceUpdate
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError, ValidationError
 
-VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LEAVE", "LATE"}
+# CRITICAL: Database enum values are LOWERCASE
+VALID_ATTENDANCE_STATUSES = {"present", "absent", "leave", "late"}
 
 
 class AttendanceService(CRUDService[Attendance]):
@@ -224,7 +225,7 @@ class AttendanceService(CRUDService[Attendance]):
         
         # Filter by status
         if status:
-            normalized_status = status.strip().upper()
+            normalized_status = status.strip().lower()  # Lowercase to match database enum
             if normalized_status in VALID_ATTENDANCE_STATUSES:
                 query = query.filter(Attendance.status == normalized_status)
         
@@ -385,7 +386,8 @@ class AttendanceService(CRUDService[Attendance]):
         self.delete(db, attendance_id)
 
     def _normalize_status(self, status: str) -> str:
-        normalized = status.strip().upper()
+        """Normalize status to lowercase to match PostgreSQL enum"""
+        normalized = status.strip().lower()  # Lowercase to match database enum
         if normalized not in VALID_ATTENDANCE_STATUSES:
             raise ValidationError(
                 f"Attendance status must be one of: {', '.join(sorted(VALID_ATTENDANCE_STATUSES))}."
