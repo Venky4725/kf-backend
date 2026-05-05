@@ -125,9 +125,37 @@ class ProfileService(CRUDService[Profile]):
         # Apply pagination
         return query.offset(skip).limit(limit).all()
 
-    def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate) -> Profile:
+    def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate, current_user=None) -> Profile:
         # Get the existing profile first
         existing_profile = self.get(db, profile_id)
+        
+        # Access control
+        if current_user:
+            # ADMIN can update any profile
+            if current_user.role == "ADMIN":
+                pass
+            # TECHNICAL_LEAD can only update their own profile or interns in their batch
+            elif current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can update their own profile
+                if existing_profile.id == current_user.id:
+                    pass
+                # Tech Lead can update interns in their batch
+                elif existing_profile.role == "INTERN" and existing_profile.batch_id == current_user.batch_id:
+                    pass
+                else:
+                    from fastapi import HTTPException, status as http_status
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail="You can only update your own profile or interns in your batch"
+                    )
+            # INTERN can only update their own profile
+            elif current_user.role == "INTERN":
+                if existing_profile.id != current_user.id:
+                    from fastapi import HTTPException, status as http_status
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail="You can only update your own profile"
+                    )
         
         updates = payload.model_dump(exclude_unset=True)
         

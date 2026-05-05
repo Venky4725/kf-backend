@@ -70,8 +70,10 @@ def update_profile(
     profile_id: UUID,
     payload: ProfileUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return profile_service.update_profile(db, profile_id, payload)
+    """Update a profile with access control."""
+    return profile_service.update_profile(db, profile_id, payload, current_user)
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
