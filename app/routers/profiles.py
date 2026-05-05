@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Response, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
@@ -138,3 +138,99 @@ def admin_create_user(
             detail="Only administrators can create new users.",
         )
     return auth_service.create_user(db, payload)
+
+
+@router.post("/upload-csv")
+async def upload_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(auth_get_current_user),
+):
+    """
+    Upload CSV file to bulk create profiles.
+    CSV format: name,email,role,tech_stack,batch_name
+    """
+    import logging
+    import csv
+    import io
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"CSV upload initiated by user: {current_user.id} ({current_user.role})")
+    
+    # Check file type
+    if not file.filename.endswith('.csv'):
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a CSV file"
+        )
+    
+    # Read file content
+    try:
+        contents = await file.read()
+        decoded = contents.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(decoded))
+    except Exception as e:
+        logger.error(f"Error reading CSV file: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error reading CSV file: {str(e)}"
+        )
+    
+    created = 0
+    skipped = 0
+    errors = []
+    
+    for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (header is row 1)
+        try:
+            # Validate required fields
+            if not row.get("name") or not row["name"].strip():
+                skipped += 1
+                errors.append(f"Row {row_num}: Missing name")
+                continue
+            
+            if not row.get("email") or not row["email"].strip():
+                skipped += 1
+                errors.append(f"Row {row_num}: Missing email")
+                continue
+            
+            if not row.get("role") or not row["role"].strip():
+                skipped += 1
+                errors.append(f"Row {row_num}: Missing role")
+                continue
+            
+            # CRITICAL: Validate batch_name is present
+            if not row.get("batch_name") or not row["batch_name"].strip():
+                skipped += 1
+                errors.append(f"Row {row_num}: Missing batch_name")
+                logger.warning(f"Row {row_num} skipped: Missing batch_name")
+                continue
+            
+            # Create profile
+            profile_data = ProfileCreate(
+                name=row["name"].strip(),
+                email=row["email"].strip(),
+                role=row["role"].strip(),
+                tech_stack=row.get("tech_stack", "").strip() or None,
+                batch_name=row["batch_name"].strip()
+            )
+            
+            profile_service.create_profile(db, profile_data, current_user)
+            created += 1
+            logger.info(f"Row {row_num}: Created profile for {row['email']}")
+            
+        except Exception as e:
+            skipped += 1
+            error_msg = f"Row {row_num}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(error_msg)
+            continue
+    
+    logger.info(f"CSV upload complete: {created} created, {skipped} skipped")
+    
+    return {
+        "created": created,
+        "skipped": skipped,
+        "errors": errors[:20]  # Limit to first 20 errors
+    }
