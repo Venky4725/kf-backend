@@ -1,7 +1,7 @@
 from uuid import UUID
 import logging
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.notification import Notification
@@ -22,12 +22,22 @@ class NotificationService(CRUDService[Notification]):
         try:
             self._ensure_profile_exists(db, payload.user_id)
             
+            # Validate sender if provided
+            if payload.sender_id:
+                sender = db.get(Profile, payload.sender_id)
+                if not sender:
+                    raise ConflictError(f"Sender profile '{payload.sender_id}' does not exist.")
+            
             notification_data = {
                 "user_id": payload.user_id,
                 "title": payload.title.strip(),
                 "message": payload.message.strip(),
                 "is_read": False,
             }
+            
+            # Add sender_id if provided
+            if payload.sender_id:
+                notification_data["sender_id"] = payload.sender_id
             
             # Only add type and is_broadcast if they exist in the model
             try:
@@ -101,9 +111,10 @@ class NotificationService(CRUDService[Notification]):
         search: str | None = None,
         type: str | None = None,
         current_user=None,
-    ) -> list[Notification]:
+    ) -> list[dict]:
         try:
-            query = db.query(Notification)
+            # Use joinedload to eagerly load sender relationship
+            query = db.query(Notification).options(joinedload(Notification.sender))
             
             # Filter by current user - only show their notifications
             if current_user:
@@ -136,7 +147,25 @@ class NotificationService(CRUDService[Notification]):
             # Execute query with error handling
             try:
                 results = query.order_by(Notification.created_at.desc()).offset(skip).limit(limit).all()
-                return results if results else []
+                
+                # Build response with sender_name
+                response = []
+                for notification in results:
+                    notification_dict = {
+                        "id": notification.id,
+                        "user_id": notification.user_id,
+                        "sender_id": notification.sender_id if hasattr(notification, 'sender_id') else None,
+                        "sender_name": notification.sender.name if hasattr(notification, 'sender') and notification.sender else None,
+                        "title": notification.title,
+                        "message": notification.message,
+                        "type": notification.type if hasattr(notification, 'type') else None,
+                        "is_read": notification.is_read,
+                        "is_broadcast": notification.is_broadcast if hasattr(notification, 'is_broadcast') else False,
+                        "created_at": notification.created_at,
+                    }
+                    response.append(notification_dict)
+                
+                return response if response else []
             except SQLAlchemyError as e:
                 logger.error(f"Database error in list_notifications: {e}")
                 # Return empty list instead of crashing

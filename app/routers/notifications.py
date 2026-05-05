@@ -13,7 +13,7 @@ from app.services.notification_service import notification_service
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-@router.get("", response_model=list[NotificationResponse])
+@router.get("")
 def get_notifications(
     skip: int = 0,
     limit: int = 100,
@@ -24,6 +24,7 @@ def get_notifications(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """Get notifications for current user with sender information"""
     return notification_service.list_notifications(
         db,
         skip=skip,

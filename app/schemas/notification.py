@@ -10,6 +10,7 @@ class NotificationCreate(BaseModel):
     title: str
     message: str
     type: str | None = None
+    sender_id: UUID | None = None  # NEW
 
 
 class NotificationBroadcast(BaseModel):
@@ -24,6 +25,8 @@ class NotificationUpdate(BaseModel):
 class NotificationResponse(BaseModel):
     id: UUID
     user_id: UUID
+    sender_id: UUID | None = None  # NEW
+    sender_name: str | None = None  # NEW - computed field
     title: str
     message: str
     type: str | None = None

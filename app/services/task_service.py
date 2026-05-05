@@ -39,17 +39,20 @@ class TaskService(CRUDService[Task]):
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only create tasks for their assigned batches"
                     )
-                
-                # If assigned_to is provided, ensure user belongs to their batch
-                if payload.assigned_to:
-                    user = db.get(Profile, payload.assigned_to)
-                    if not user:
-                        raise ConflictError(f"User '{payload.assigned_to}' does not exist.")
-                    if user.batch_id != payload.batch_id:
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Can only assign tasks to users in the same batch"
-                        )
+            
+            # Validate assigned_to user exists (ALLOW CROSS-BATCH ASSIGNMENT)
+            if payload.assigned_to:
+                user = db.get(Profile, payload.assigned_to)
+                if not user:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"User '{payload.assigned_to}' does not exist."
+                    )
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot assign task to inactive user"
+                    )
             
             task_data = {
                 "title": payload.title.strip() if payload.title else "",
@@ -182,17 +185,20 @@ class TaskService(CRUDService[Task]):
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only update tasks in their assigned batches"
                     )
-                
-                # If updating assigned_to, ensure user belongs to their batch
-                if payload.assigned_to:
-                    user = db.get(Profile, payload.assigned_to)
-                    if not user:
-                        raise ConflictError(f"User '{payload.assigned_to}' does not exist.")
-                    if user.batch_id != task.batch_id:
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Can only assign tasks to users in the same batch"
-                        )
+            
+            # Validate assigned_to user exists (ALLOW CROSS-BATCH ASSIGNMENT)
+            if payload.assigned_to:
+                user = db.get(Profile, payload.assigned_to)
+                if not user:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"User '{payload.assigned_to}' does not exist."
+                    )
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot assign task to inactive user"
+                    )
             
             updates = payload.model_dump(exclude_unset=True)
             if "title" in updates and updates["title"] is not None:
