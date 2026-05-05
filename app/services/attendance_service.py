@@ -39,22 +39,29 @@ class AttendanceService(CRUDService[Attendance]):
             
             # TECH_LEAD can only create attendance for interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
-                if current_user.batch_id is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead is not assigned to any batch"
-                    )
-                
                 if target_user.role != "INTERN":
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only mark attendance for interns"
                     )
                 
-                if target_user.batch_id != current_user.batch_id:
+                # Check if intern is in a batch led by this Tech Lead
+                if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only mark attendance for interns in their batch"
+                        detail="Intern is not assigned to any batch"
+                    )
+                
+                from app.models.batch import Batch
+                batch = db.query(Batch).filter(
+                    Batch.id == target_user.batch_id,
+                    Batch.tech_lead_id == current_user.id
+                ).first()
+                
+                if not batch:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only mark attendance for interns in batches they lead"
                     )
             
             # INTERN cannot create attendance
@@ -79,11 +86,31 @@ class AttendanceService(CRUDService[Attendance]):
             existing.status = status_value
             db.commit()
             db.refresh(existing)
+            
+            # Populate user_name and batch_name for response
+            try:
+                user = db.query(Profile).filter(Profile.id == existing.user_id).first()
+                if user:
+                    existing.user_name = user.name
+                    if user.batch_id:
+                        from app.models.batch import Batch
+                        batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
+                        existing.batch_name = batch.name if batch else None
+                    else:
+                        existing.batch_name = None
+                else:
+                    existing.user_name = None
+                    existing.batch_name = None
+            except Exception as e:
+                logger.error(f"Error populating attendance fields: {e}")
+                existing.user_name = None
+                existing.batch_name = None
+            
             return existing
 
         # Create new attendance record
         logger.info(f"Creating new attendance for user {payload.user_id} on {payload.day}")
-        return self.create(
+        new_attendance = self.create(
             db,
             {
                 "user_id": payload.user_id,
@@ -91,6 +118,27 @@ class AttendanceService(CRUDService[Attendance]):
                 "status": status_value,
             },
         )
+        
+        # Populate user_name and batch_name for response
+        try:
+            user = db.query(Profile).filter(Profile.id == new_attendance.user_id).first()
+            if user:
+                new_attendance.user_name = user.name
+                if user.batch_id:
+                    from app.models.batch import Batch
+                    batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
+                    new_attendance.batch_name = batch.name if batch else None
+                else:
+                    new_attendance.batch_name = None
+            else:
+                new_attendance.user_name = None
+                new_attendance.batch_name = None
+        except Exception as e:
+            logger.error(f"Error populating attendance fields: {e}")
+            new_attendance.user_name = None
+            new_attendance.batch_name = None
+        
+        return new_attendance
 
     def list_attendance(
         self,
@@ -111,6 +159,7 @@ class AttendanceService(CRUDService[Attendance]):
     ) -> list[Attendance]:
         import logging
         from sqlalchemy import asc, desc, func, or_
+        from sqlalchemy.orm import joinedload
         from app.models.profile import Profile
         from app.models.batch import Batch
         
@@ -124,13 +173,17 @@ class AttendanceService(CRUDService[Attendance]):
                 Batch, Profile.batch_id == Batch.id
             )
             
-            # CRITICAL: Tech Lead can only see attendance for their batch
+            # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                if current_user.batch_id is None:
-                    logger.warning(f"Tech Lead {current_user.id} has no batch assigned")
+                # Filter by batches where this Tech Lead is assigned
+                query = query.filter(Batch.tech_lead_id == current_user.id)
+                logger.info(f"Tech Lead filter applied: tech_lead_id={current_user.id}")
+                
+                # Check if Tech Lead has any batches
+                batch_count = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).count()
+                if batch_count == 0:
+                    logger.warning(f"Tech Lead {current_user.id} is not assigned to any batches")
                     return []  # Tech Lead not assigned to any batch
-                query = query.filter(Profile.batch_id == current_user.batch_id)
-                logger.info(f"Tech Lead filter applied: batch_id={current_user.batch_id}")
             
             # Filter by user_id
             if user_id:
@@ -188,15 +241,29 @@ class AttendanceService(CRUDService[Attendance]):
             
             # Enhance results with user_name and batch_name
             for attendance in results:
-                user = db.get(Profile, attendance.user_id)
-                if user:
-                    attendance.user_name = user.name
-                    if user.batch_id:
-                        batch = db.get(Batch, user.batch_id)
-                        attendance.batch_name = batch.name if batch else None
+                try:
+                    user = db.query(Profile).filter(Profile.id == attendance.user_id).first()
+                    if user:
+                        attendance.user_name = user.name
+                        logger.info(f"Attendance {attendance.id}: user_name={user.name}, batch_id={user.batch_id}")
+                        
+                        if user.batch_id:
+                            batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
+                            if batch:
+                                attendance.batch_name = batch.name
+                                logger.info(f"Attendance {attendance.id}: batch_name={batch.name}")
+                            else:
+                                attendance.batch_name = None
+                                logger.warning(f"Batch {user.batch_id} not found for user {user.id}")
+                        else:
+                            attendance.batch_name = None
+                            logger.info(f"User {user.id} has no batch_id")
                     else:
+                        attendance.user_name = None
                         attendance.batch_name = None
-                else:
+                        logger.warning(f"User {attendance.user_id} not found")
+                except Exception as e:
+                    logger.error(f"Error populating attendance {attendance.id}: {e}")
                     attendance.user_name = None
                     attendance.batch_name = None
             
@@ -228,16 +295,23 @@ class AttendanceService(CRUDService[Attendance]):
             
             # TECH_LEAD can only update attendance for interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
-                if current_user.batch_id is None:
+                # Check if intern is in a batch led by this Tech Lead
+                if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead is not assigned to any batch"
+                        detail="Intern is not assigned to any batch"
                     )
                 
-                if target_user.batch_id != current_user.batch_id:
+                from app.models.batch import Batch
+                batch = db.query(Batch).filter(
+                    Batch.id == target_user.batch_id,
+                    Batch.tech_lead_id == current_user.id
+                ).first()
+                
+                if not batch:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only update attendance for interns in their batch"
+                        detail="Tech Lead can only update attendance for interns in batches they lead"
                     )
             
             # INTERN cannot update attendance
@@ -272,16 +346,23 @@ class AttendanceService(CRUDService[Attendance]):
             
             # TECH_LEAD can only delete attendance for interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
-                if current_user.batch_id is None:
+                # Check if intern is in a batch led by this Tech Lead
+                if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead is not assigned to any batch"
+                        detail="Intern is not assigned to any batch"
                     )
                 
-                if target_user.batch_id != current_user.batch_id:
+                from app.models.batch import Batch
+                batch = db.query(Batch).filter(
+                    Batch.id == target_user.batch_id,
+                    Batch.tech_lead_id == current_user.id
+                ).first()
+                
+                if not batch:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete attendance for interns in their batch"
+                        detail="Tech Lead can only delete attendance for interns in batches they lead"
                     )
             
             # INTERN cannot delete attendance
