@@ -8,7 +8,7 @@ from app.schemas.attendance import AttendanceCreate, AttendanceUpdate
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError, ValidationError
 
-VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LEAVE"}
+VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LEAVE", "LATE"}
 
 
 class AttendanceService(CRUDService[Attendance]):
@@ -16,24 +16,79 @@ class AttendanceService(CRUDService[Attendance]):
     resource_name = "Attendance"
     table_name = "attendance"
 
-    def create_attendance(self, db: Session, payload: AttendanceCreate) -> Attendance:
+    def create_attendance(self, db: Session, payload: AttendanceCreate, current_user=None) -> Attendance:
+        import logging
+        from fastapi import HTTPException, status
+        from app.models.profile import Profile
+        
+        logger = logging.getLogger(__name__)
+        
+        # Validate profile exists
         self._ensure_profile_exists(db, payload.user_id)
-        status = self._normalize_status(payload.status)
+        
+        # Get the target user
+        target_user = db.get(Profile, payload.user_id)
+        
+        # Access control
+        if current_user:
+            logger.info(f"User {current_user.id} ({current_user.role}) creating attendance for {payload.user_id}")
+            
+            # ADMIN can create attendance for anyone
+            if current_user.role == "ADMIN":
+                pass
+            
+            # TECH_LEAD can only create attendance for interns in their batch
+            elif current_user.role == "TECHNICAL_LEAD":
+                if current_user.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.role != "INTERN":
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only mark attendance for interns"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only mark attendance for interns in their batch"
+                    )
+            
+            # INTERN cannot create attendance
+            elif current_user.role == "INTERN":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Interns cannot create attendance records"
+                )
+        
+        status_value = self._normalize_status(payload.status)
 
-        duplicate = (
+        # Check for existing attendance on the same day
+        existing = (
             db.query(Attendance)
             .filter(Attendance.user_id == payload.user_id, Attendance.day == payload.day)
             .first()
         )
-        if duplicate is not None:
-            raise ConflictError("Attendance is already marked for this user on the given day.")
+        
+        if existing is not None:
+            # Update existing attendance instead of throwing error
+            logger.info(f"Updating existing attendance {existing.id} for user {payload.user_id} on {payload.day}")
+            existing.status = status_value
+            db.commit()
+            db.refresh(existing)
+            return existing
 
+        # Create new attendance record
+        logger.info(f"Creating new attendance for user {payload.user_id} on {payload.day}")
         return self.create(
             db,
             {
                 "user_id": payload.user_id,
                 "day": payload.day,
-                "status": status,
+                "status": status_value,
             },
         )
 
@@ -150,8 +205,93 @@ class AttendanceService(CRUDService[Attendance]):
             logger.error(f"Error in list_attendance: {e}")
             return []
 
-    def update_attendance(self, db: Session, attendance_id: UUID, payload: AttendanceUpdate) -> Attendance:
+    def update_attendance(self, db: Session, attendance_id: UUID, payload: AttendanceUpdate, current_user=None) -> Attendance:
+        import logging
+        from fastapi import HTTPException, status
+        from app.models.profile import Profile
+        
+        logger = logging.getLogger(__name__)
+        
+        # Get the attendance record
+        attendance = self.get(db, attendance_id)
+        
+        # Get the target user
+        target_user = db.get(Profile, attendance.user_id)
+        
+        # Access control
+        if current_user:
+            logger.info(f"User {current_user.id} ({current_user.role}) updating attendance {attendance_id}")
+            
+            # ADMIN can update any attendance
+            if current_user.role == "ADMIN":
+                pass
+            
+            # TECH_LEAD can only update attendance for interns in their batch
+            elif current_user.role == "TECHNICAL_LEAD":
+                if current_user.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only update attendance for interns in their batch"
+                    )
+            
+            # INTERN cannot update attendance
+            elif current_user.role == "INTERN":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Interns cannot update attendance records"
+                )
+        
         return self.update(db, attendance_id, {"status": self._normalize_status(payload.status)})
+    
+    def delete_attendance(self, db: Session, attendance_id: UUID, current_user=None) -> None:
+        import logging
+        from fastapi import HTTPException, status
+        from app.models.profile import Profile
+        
+        logger = logging.getLogger(__name__)
+        
+        # Get the attendance record
+        attendance = self.get(db, attendance_id)
+        
+        # Get the target user
+        target_user = db.get(Profile, attendance.user_id)
+        
+        # Access control
+        if current_user:
+            logger.info(f"User {current_user.id} ({current_user.role}) deleting attendance {attendance_id}")
+            
+            # ADMIN can delete any attendance
+            if current_user.role == "ADMIN":
+                pass
+            
+            # TECH_LEAD can only delete attendance for interns in their batch
+            elif current_user.role == "TECHNICAL_LEAD":
+                if current_user.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only delete attendance for interns in their batch"
+                    )
+            
+            # INTERN cannot delete attendance
+            elif current_user.role == "INTERN":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Interns cannot delete attendance records"
+                )
+        
+        self.delete(db, attendance_id)
 
     def _normalize_status(self, status: str) -> str:
         normalized = status.strip().upper()

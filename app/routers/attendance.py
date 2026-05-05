@@ -77,8 +77,15 @@ def get_attendance_record(
 def create_attendance(
     payload: AttendanceCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return attendance_service.create_attendance(db, payload)
+    """
+    Create attendance record with access control.
+    - ADMIN: Can create attendance for any user
+    - TECH_LEAD: Can only create attendance for interns in their batch
+    - INTERN: Cannot create attendance
+    """
+    return attendance_service.create_attendance(db, payload, current_user)
 
 
 @router.put("/{attendance_id}", response_model=AttendanceResponse)
@@ -86,14 +93,28 @@ def update_attendance(
     attendance_id: UUID,
     payload: AttendanceUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return attendance_service.update_attendance(db, attendance_id, payload)
+    """
+    Update attendance record with access control.
+    - ADMIN: Can update any attendance
+    - TECH_LEAD: Can only update attendance for interns in their batch
+    - INTERN: Cannot update attendance
+    """
+    return attendance_service.update_attendance(db, attendance_id, payload, current_user)
 
 
 @router.delete("/{attendance_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_attendance(
     attendance_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> Response:
-    attendance_service.delete(db, attendance_id)
+    """
+    Delete attendance record with access control.
+    - ADMIN: Can delete any attendance
+    - TECH_LEAD: Can only delete attendance for interns in their batch
+    - INTERN: Cannot delete attendance
+    """
+    attendance_service.delete_attendance(db, attendance_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
