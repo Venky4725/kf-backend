@@ -27,72 +27,48 @@ logger = get_logger(__name__)
 
 def run_startup_checks() -> None:
     if settings.JWT_SECRET == "change-me":
-        logger.warning(
-            "JWT_SECRET is using the default value. "
-            "Update it before production deployment."
-        )
+        logger.warning("JWT_SECRET is default. Change it.")
 
     if settings.ADMIN_PASSWORD == "admin123":
-        logger.warning(
-            "ADMIN_PASSWORD is using the default value. "
-            "Update it before production deployment."
-        )
+        logger.warning("ADMIN_PASSWORD is default. Change it.")
 
-    logger.info(
-        "Authentication: Using database-based password hashing "
-        "from public.profiles table."
-    )
+    logger.info("Auth system ready.")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("Starting Knowledge Factory API")
+    logger.info("🚀 Starting Knowledge Factory API")
+
     run_startup_checks()
 
     with engine.begin() as connection:
         connection.execute(text("SELECT 1"))
         Base.metadata.create_all(bind=connection)
 
-    logger.info("Database connectivity verified and metadata synchronized")
+    logger.info("✅ DB connected")
 
     yield
 
-    logger.info("Shutting down Knowledge Factory API")
+    logger.info("🛑 Shutting down API")
 
 
 app = FastAPI(
     title="Knowledge Factory API",
     version="1.0.0",
-    description=(
-        "Knowledge Factory backend for intern, batch, "
-        "task, and evaluation management."
-    ),
     lifespan=lifespan,
 )
 
-
-def _split_origins(value: str) -> list[str]:
-    return [
-        origin.strip()
-        for origin in value.replace(",", " ").split()
-        if origin.strip()
-    ]
-
+# =========================
+# ✅ HARD FIX FOR CORS
+# =========================
 
 origins = [
-    settings.FRONTEND_URL,
-    "https://kf-frontend-rho.vercel.app",
+    "https://kf-frontend-rho.vercel.app",  # production frontend
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    *_split_origins(settings.CORS_ORIGINS),
 ]
 
-origins = list(
-    dict.fromkeys(origin for origin in origins if origin)
-)
-
+logger.info(f"🌍 Allowed CORS origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -102,14 +78,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================
+# ROUTES
+# =========================
 
 @app.get("/api/health", tags=["Health"])
-def health() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "env": settings.ENVIRONMENT,
-    }
-
+def health():
+    return {"status": "ok"}
 
 for router in (
     auth.router,
