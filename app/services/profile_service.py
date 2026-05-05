@@ -30,47 +30,64 @@ class ProfileService(CRUDService[Profile]):
         if role not in VALID_PROFILE_ROLES:
             raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
         
-        # CONDITIONAL VALIDATION: batch_name required only for INTERN role
+        # CONDITIONAL VALIDATION: batch required only for INTERN role
         batch_id = None
         
         if role == "INTERN":
-            # Interns MUST have a batch_name
-            if not payload.batch_name or not payload.batch_name.strip():
+            # Interns MUST have either batch_id or batch_name
+            if payload.batch_id:
+                # Form-based creation: batch_id provided directly
+                logger.info(f"Creating INTERN with batch_id: {payload.batch_id}")
+                batch = db.query(Batch).filter(Batch.id == payload.batch_id).first()
+                
+                if not batch:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch with id '{payload.batch_id}' does not exist"
+                    )
+                
+                batch_id = batch.id
+                logger.info(f"Found batch: {batch.name} (ID: {batch.id})")
+                
+            elif payload.batch_name:
+                # CSV upload: batch_name provided, lookup or create
+                batch_name = payload.batch_name.strip()
+                logger.info(f"Creating INTERN with batch_name: {batch_name}")
+                
+                # Lookup batch by name (case-insensitive)
+                batch = db.query(Batch).filter(
+                    func.lower(Batch.name) == batch_name.lower()
+                ).first()
+                
+                # Create batch if it doesn't exist
+                if not batch:
+                    from datetime import datetime
+                    logger.info(f"Batch '{batch_name}' not found, creating new batch")
+                    batch = Batch(
+                        name=batch_name,
+                        tech_stack="General",  # Default tech stack for auto-created batches
+                        start_date=datetime.utcnow().date(),  # Set to current date
+                        team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
+                    )
+                    db.add(batch)
+                    db.commit()  # CRITICAL: Commit batch immediately to ensure it persists
+                    db.refresh(batch)  # Refresh to get the ID
+                    logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
+                else:
+                    logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
+                
+                batch_id = batch.id
+                logger.info(f"Assigning INTERN to batch_id: {batch_id}")
+            else:
+                # Neither batch_id nor batch_name provided
                 from fastapi import HTTPException
                 raise HTTPException(
                     status_code=400,
-                    detail="batch_name is required for INTERN role"
+                    detail="Batch is required for INTERN role. Provide either batch_id or batch_name"
                 )
-            
-            batch_name = payload.batch_name.strip()
-            logger.info(f"Creating INTERN with batch_name: {batch_name}")
-            
-            # Lookup batch by name (case-insensitive)
-            batch = db.query(Batch).filter(
-                func.lower(Batch.name) == batch_name.lower()
-            ).first()
-            
-            # Create batch if it doesn't exist
-            if not batch:
-                from datetime import datetime
-                logger.info(f"Batch '{batch_name}' not found, creating new batch")
-                batch = Batch(
-                    name=batch_name,
-                    tech_stack="General",  # Default tech stack for auto-created batches
-                    start_date=datetime.utcnow().date(),  # Set to current date
-                    team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
-                )
-                db.add(batch)
-                db.commit()  # CRITICAL: Commit batch immediately to ensure it persists
-                db.refresh(batch)  # Refresh to get the ID
-                logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
-            else:
-                logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
-            
-            batch_id = batch.id
-            logger.info(f"Assigning INTERN to batch_id: {batch_id}")
         else:
-            # TECH_LEAD and ADMIN do not require batch_name
+            # TECH_LEAD and ADMIN do not require batch
             logger.info(f"Creating {role} without batch assignment")
             batch_id = None
 
@@ -118,34 +135,43 @@ class ProfileService(CRUDService[Profile]):
         current_user=None,
     ) -> list[Profile]:
         from app.models.batch import Batch
-        from sqlalchemy import or_, asc, desc
+        from sqlalchemy import asc, desc
         import logging
         
         logger = logging.getLogger(__name__)
         
-        # Start with base query
+        # Log the request
+        if current_user:
+            logger.info(f"list_profiles called by {current_user.id} ({current_user.role})")
+        
+        # Base query
         query = db.query(Profile)
         
-        # Track if Batch is already joined
-        batch_joined = False
+        # Determine if we need to join Batch table
+        needs_batch_join = (
+            (current_user and current_user.role == "TECHNICAL_LEAD") or
+            (sort_by and sort_by.lower() == "batch")
+        )
         
-        # CRITICAL: Role-based access control
+        # Apply JOIN if needed (only once)
+        if needs_batch_join:
+            query = query.join(Batch, Profile.batch_id == Batch.id)
+            logger.info("Batch table joined")
+        
+        # Role-based access control
         if current_user:
             if current_user.role == "TECHNICAL_LEAD":
                 # Tech Lead can only see interns in batches they lead
-                # Use INNER JOIN to ensure batch exists
-                query = query.join(Batch, Profile.batch_id == Batch.id)
-                batch_joined = True  # Mark that Batch is joined
                 query = query.filter(
                     Profile.role == "INTERN",
                     Batch.tech_lead_id == current_user.id
                 )
-                logger.info(f"Tech Lead {current_user.id} filter applied to profile list")
+                logger.info(f"Tech Lead filter applied: only interns in their batches")
                 
             elif current_user.role == "INTERN":
                 # Interns can only see their own profile
                 query = query.filter(Profile.id == current_user.id)
-                logger.info(f"Intern {current_user.id} filter applied - own profile only")
+                logger.info("Intern filter applied: own profile only")
         
         # Apply is_active filter
         if is_active is not None:
@@ -154,7 +180,7 @@ class ProfileService(CRUDService[Profile]):
             # Default: only show active profiles
             query = query.filter(Profile.is_active == True)
         
-        # Apply role filter (only if not already filtered by Tech Lead logic)
+        # Apply role filter (skip if Tech Lead already filtered by INTERN)
         if role and (not current_user or current_user.role != "TECHNICAL_LEAD"):
             query = query.filter(Profile.role == role.strip().upper())
         
@@ -162,28 +188,24 @@ class ProfileService(CRUDService[Profile]):
         if batch_id:
             query = query.filter(Profile.batch_id == batch_id)
         
-        # Apply search filters (case-insensitive partial match)
+        # Apply search filters
         if search_name:
             query = query.filter(Profile.name.ilike(f"%{search_name}%"))
         
         if search_email:
             query = query.filter(Profile.email.ilike(f"%{search_email}%"))
         
-        # Apply tech_stack filter (exact match, case-insensitive)
         if tech_stack:
             query = query.filter(Profile.tech_stack.ilike(tech_stack))
         
-        # Apply sorting with whitelist validation
+        # Apply sorting
         VALID_SORT_FIELDS = {"name", "email", "tech_stack", "batch"}
         
         if sort_by and sort_by.lower() in VALID_SORT_FIELDS:
             sort_field = sort_by.lower()
-            order_func = desc if sort_order and sort_order.lower() == "desc" else asc
+            order_func = asc if sort_order and sort_order.lower() == "asc" else desc
             
             if sort_field == "batch":
-                # Only join Batch if not already joined
-                if not batch_joined:
-                    query = query.outerjoin(Batch, Profile.batch_id == Batch.id)
                 query = query.order_by(order_func(Batch.name))
             elif sort_field == "name":
                 query = query.order_by(order_func(Profile.name))
@@ -192,10 +214,10 @@ class ProfileService(CRUDService[Profile]):
             elif sort_field == "tech_stack":
                 query = query.order_by(order_func(Profile.tech_stack))
         else:
-            # Default sorting by created_at desc
+            # Default sorting
             query = query.order_by(Profile.created_at.desc())
         
-        # Apply pagination
+        # Apply pagination and return
         return query.offset(skip).limit(limit).all()
 
     def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate, current_user=None) -> Profile:

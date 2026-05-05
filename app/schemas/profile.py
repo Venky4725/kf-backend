@@ -10,7 +10,8 @@ class ProfileCreate(BaseModel):
     email: EmailStr
     role: str
     tech_stack: str | None = None
-    batch_name: str | None = None  # Optional - required only for INTERN role
+    batch_id: UUID | None = None  # For form-based creation (direct batch selection)
+    batch_name: str | None = None  # For CSV upload (batch lookup/creation)
 
 
 class ProfileUpdate(BaseModel):
