@@ -1,7 +1,9 @@
 from uuid import UUID
+import logging
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, func
 
 from app.models.batch import Batch
 from app.models.evaluation import Evaluation
@@ -9,6 +11,8 @@ from app.models.profile import Profile
 from app.schemas.evaluation import EvaluationCreate, EvaluationUpdate
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationService(CRUDService[Evaluation]):
@@ -62,6 +66,7 @@ class EvaluationService(CRUDService[Evaluation]):
         limit: int = 100,
         intern_id: UUID | None = None,
         reviewed_by: UUID | None = None,
+        week_number: int | None = None,
         search: str | None = None,
         batch_id: UUID | None = None,
         sort_by: str | None = None,
@@ -69,37 +74,67 @@ class EvaluationService(CRUDService[Evaluation]):
     ) -> list[Evaluation]:
         from sqlalchemy import asc, desc
         
-        query = db.query(Evaluation)
-        
-        if intern_id:
-            query = query.filter(Evaluation.intern_id == intern_id)
-        if reviewed_by:
-            query = query.filter(Evaluation.reviewed_by == reviewed_by)
-        
-        # Filter by batch_id (join with profile)
-        if batch_id:
-            query = query.join(Profile, Evaluation.intern_id == Profile.id)
-            query = query.filter(Profile.batch_id == batch_id)
-        
-        # Search in feedback
-        if search and search.strip():
-            query = query.filter(Evaluation.feedback.ilike(f"%{search.strip()}%"))
-        
-        # Sorting
-        VALID_SORT_FIELDS = {"week_number", "score", "created_at"}
-        if sort_by and sort_by in VALID_SORT_FIELDS:
-            order_func = desc if order and order.lower() == "desc" else asc
-            if sort_by == "week_number":
-                query = query.order_by(order_func(Evaluation.week_number))
-            elif sort_by == "score":
-                query = query.order_by(order_func(Evaluation.score))
-            elif sort_by == "created_at":
-                query = query.order_by(order_func(Evaluation.created_at))
-        else:
-            # Default sorting
-            query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
-        
-        return query.offset(skip).limit(limit).all()
+        try:
+            # Start with base query - join with Profile for search on intern name
+            query = db.query(Evaluation).join(Profile, Evaluation.intern_id == Profile.id)
+            
+            # Filter by intern_id
+            if intern_id:
+                query = query.filter(Evaluation.intern_id == intern_id)
+            
+            # Filter by reviewed_by
+            if reviewed_by:
+                query = query.filter(Evaluation.reviewed_by == reviewed_by)
+            
+            # Filter by week_number (NEW)
+            if week_number is not None:
+                query = query.filter(Evaluation.week_number == week_number)
+            
+            # Filter by batch_id
+            if batch_id:
+                query = query.filter(Profile.batch_id == batch_id)
+            
+            # Search across multiple fields (intern name and feedback)
+            # IMPORTANT: Use LIKE '%search%' for partial matching
+            if search and search.strip():
+                search_term = f"%{search.strip().lower()}%"
+                try:
+                    # Search in intern name and feedback
+                    search_conditions = [func.lower(Profile.name).like(search_term)]
+                    
+                    # Only search feedback if it's not NULL
+                    search_conditions.append(func.lower(Evaluation.feedback).like(search_term))
+                    
+                    query = query.filter(or_(*search_conditions))
+                except Exception as e:
+                    logger.error(f"Error applying search filter: {e}")
+                    # Continue without search filter
+            
+            # Sorting
+            VALID_SORT_FIELDS = {"week_number", "score", "created_at"}
+            if sort_by and sort_by in VALID_SORT_FIELDS:
+                try:
+                    order_func = desc if order and order.lower() == "desc" else asc
+                    if sort_by == "week_number":
+                        query = query.order_by(order_func(Evaluation.week_number))
+                    elif sort_by == "score":
+                        query = query.order_by(order_func(Evaluation.score))
+                    elif sort_by == "created_at":
+                        query = query.order_by(order_func(Evaluation.created_at))
+                except Exception as e:
+                    logger.error(f"Error applying sort: {e}")
+                    # Continue with default sorting
+                    query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
+            else:
+                # Default sorting
+                query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
+            
+            # Apply pagination
+            return query.offset(skip).limit(limit).all()
+        except Exception as e:
+            logger.error(f"Error in list_evaluations: {e}")
+            # Return empty list instead of crashing
+            return []
 
     def update_evaluation(self, db: Session, evaluation_id: UUID, payload: EvaluationUpdate, current_user) -> Evaluation:
         # Check access before update

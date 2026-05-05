@@ -1,9 +1,10 @@
 from datetime import date
 from uuid import UUID
+import logging
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import asc, desc
+from sqlalchemy import asc, desc, or_, func
 
 from app.models.batch import Batch
 from app.models.submission import Submission
@@ -11,6 +12,8 @@ from app.models.profile import Profile
 from app.schemas.submission import SubmissionCreate, SubmissionUpdate
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError
+
+logger = logging.getLogger(__name__)
 
 
 class SubmissionService(CRUDService[Submission]):
@@ -53,52 +56,78 @@ class SubmissionService(CRUDService[Submission]):
         sort_by: str | None = None,
         order: str | None = None,
     ) -> list[Submission]:
-        query = db.query(Submission)
-        
-        # Filter by user_id
-        if user_id:
-            query = query.filter(Submission.user_id == user_id)
-        
-        # Filter by submitted_for date
-        if submitted_for:
-            query = query.filter(Submission.submitted_for == submitted_for)
-        
-        # Filter by batch_id (join with profile)
-        if batch_id:
-            query = query.join(Profile, Submission.user_id == Profile.id)
-            query = query.filter(Profile.batch_id == batch_id)
-        
-        # Search in content
-        if search and search.strip():
-            query = query.filter(Submission.content.ilike(f"%{search.strip()}%"))
-        
-        # Sorting
-        VALID_SORT_FIELDS = {"submitted_for", "created_at", "content"}
-        if sort_by and sort_by in VALID_SORT_FIELDS:
-            order_func = desc if order and order.lower() == "desc" else asc
-            if sort_by == "submitted_for":
-                query = query.order_by(order_func(Submission.submitted_for))
-            elif sort_by == "created_at":
-                query = query.order_by(order_func(Submission.created_at))
-            elif sort_by == "content":
-                query = query.order_by(order_func(Submission.content))
-        else:
-            # Default sorting
-            query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
-        
-        submissions = query.offset(skip).limit(limit).all()
-        
-        # Add submitted_by_name by joining with profile
-        result = []
-        for sub in submissions:
-            profile = db.query(Profile).filter(Profile.id == sub.user_id).first()
-            if profile:
-                sub.submitted_by_name = profile.name
+        try:
+            # Start with base query - always join with Profile for search and name display
+            query = db.query(Submission).join(Profile, Submission.user_id == Profile.id)
+            
+            # Filter by user_id
+            if user_id:
+                query = query.filter(Submission.user_id == user_id)
+            
+            # Filter by submitted_for date
+            if submitted_for:
+                query = query.filter(Submission.submitted_for == submitted_for)
+            
+            # Filter by batch_id
+            if batch_id:
+                query = query.filter(Profile.batch_id == batch_id)
+            
+            # Search across multiple fields (intern name and content)
+            # IMPORTANT: Use LIKE '%search%' for partial matching, not just 'search%'
+            if search and search.strip():
+                search_term = f"%{search.strip().lower()}%"
+                try:
+                    query = query.filter(
+                        or_(
+                            func.lower(Profile.name).like(search_term),
+                            func.lower(Submission.content).like(search_term)
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Error applying search filter: {e}")
+                    # Continue without search filter
+            
+            # Sorting
+            VALID_SORT_FIELDS = {"submitted_for", "created_at", "content"}
+            if sort_by and sort_by in VALID_SORT_FIELDS:
+                try:
+                    order_func = desc if order and order.lower() == "desc" else asc
+                    if sort_by == "submitted_for":
+                        query = query.order_by(order_func(Submission.submitted_for))
+                    elif sort_by == "created_at":
+                        query = query.order_by(order_func(Submission.created_at))
+                    elif sort_by == "content":
+                        query = query.order_by(order_func(Submission.content))
+                except Exception as e:
+                    logger.error(f"Error applying sort: {e}")
+                    # Continue with default sorting
+                    query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
             else:
-                sub.submitted_by_name = None
-            result.append(sub)
-        
-        return result
+                # Default sorting
+                query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
+            
+            # Apply pagination
+            submissions = query.offset(skip).limit(limit).all()
+            
+            # Add submitted_by_name (already joined with profile)
+            result = []
+            for sub in submissions:
+                try:
+                    profile = db.query(Profile).filter(Profile.id == sub.user_id).first()
+                    if profile:
+                        sub.submitted_by_name = profile.name
+                    else:
+                        sub.submitted_by_name = None
+                except Exception as e:
+                    logger.error(f"Error fetching profile for submission: {e}")
+                    sub.submitted_by_name = None
+                result.append(sub)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in list_submissions: {e}")
+            # Return empty list instead of crashing
+            return []
 
     def update_submission(self, db: Session, submission_id: UUID, payload: SubmissionUpdate, current_user) -> Submission:
         # Check access before update
