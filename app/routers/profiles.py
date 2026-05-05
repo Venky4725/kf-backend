@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
 from app.core.dependencies import get_current_user as auth_get_current_user
 from app.core.dependencies import oauth2_scheme
+from app.models.profile import Profile
+from app.models.batch import Batch
 from app.schemas.auth import AdminCreateUserRequest, MessageResponse
 from app.schemas.profile import ProfileCreate, ProfileResponse, ProfileUpdate
 from app.services.auth_service import auth_service
@@ -155,7 +157,6 @@ async def upload_csv(
     import csv
     import io
     from sqlalchemy import func
-    from app.models.batch import Batch
     from datetime import datetime
     
     logger = logging.getLogger(__name__)
