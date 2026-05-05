@@ -71,6 +71,7 @@ class NotificationService(CRUDService[Notification]):
                 try:
                     notification = Notification(
                         user_id=user.id,
+                        sender_id=current_user.id,  # CRITICAL: Set sender_id
                         title="System Notification",
                         message=payload.message.strip(),
                         is_read=False,
@@ -113,15 +114,27 @@ class NotificationService(CRUDService[Notification]):
         current_user=None,
     ) -> list[dict]:
         try:
+            from sqlalchemy import or_
+            
             # Use joinedload to eagerly load sender relationship
             query = db.query(Notification).options(joinedload(Notification.sender))
             
-            # Filter by current user - only show their notifications
+            # CRITICAL FIX: Show BOTH received AND sent notifications
             if current_user:
-                query = query.filter(Notification.user_id == current_user.id)
+                query = query.filter(
+                    or_(
+                        Notification.user_id == current_user.id,      # received
+                        Notification.sender_id == current_user.id     # sent
+                    )
+                )
             elif user_id:
                 # Fallback if no current_user but user_id provided
-                query = query.filter(Notification.user_id == user_id)
+                query = query.filter(
+                    or_(
+                        Notification.user_id == user_id,
+                        Notification.sender_id == user_id
+                    )
+                )
             
             # Apply is_read filter only if explicitly provided
             if is_read is not None:
@@ -148,14 +161,20 @@ class NotificationService(CRUDService[Notification]):
             try:
                 results = query.order_by(Notification.created_at.desc()).offset(skip).limit(limit).all()
                 
-                # Build response with sender_name
+                # Build response with sender_name and is_sender flag
                 response = []
                 for notification in results:
+                    # Determine if current user is the sender
+                    is_sender = False
+                    if current_user and hasattr(notification, 'sender_id'):
+                        is_sender = notification.sender_id == current_user.id
+                    
                     notification_dict = {
                         "id": notification.id,
                         "user_id": notification.user_id,
                         "sender_id": notification.sender_id if hasattr(notification, 'sender_id') else None,
                         "sender_name": notification.sender.name if hasattr(notification, 'sender') and notification.sender else None,
+                        "is_sender": is_sender,  # NEW - indicates if current user sent this
                         "title": notification.title,
                         "message": notification.message,
                         "type": notification.type if hasattr(notification, 'type') else None,

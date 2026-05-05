@@ -49,7 +49,12 @@ def get_notification(
 def create_notification(
     payload: NotificationCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),  # ADDED: Require authentication
 ):
+    """Create a notification - sender_id will be set to current user if not provided"""
+    # If sender_id not provided in payload, set it to current user
+    if not payload.sender_id:
+        payload.sender_id = current_user.id
     return notification_service.create_notification(db, payload)
 
 

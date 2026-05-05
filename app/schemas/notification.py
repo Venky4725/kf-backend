@@ -27,6 +27,7 @@ class NotificationResponse(BaseModel):
     user_id: UUID
     sender_id: UUID | None = None  # NEW
     sender_name: str | None = None  # NEW - computed field
+    is_sender: bool = False  # NEW - indicates if current user is the sender
     title: str
     message: str
     type: str | None = None
