@@ -85,18 +85,26 @@ class AttendanceService(CRUDService[Attendance]):
             logger.info(f"Updating existing attendance {existing.id} for user {payload.user_id} on {payload.day}")
             existing.status = status_value
             db.commit()
-            db.refresh(existing)
+            
+            # Re-query with joinedload to ensure relationships are loaded
+            from sqlalchemy.orm import joinedload
+            existing = db.query(Attendance).options(
+                joinedload(Attendance.profile).joinedload(Profile.batch)
+            ).filter(Attendance.id == existing.id).first()
             
             # Populate user_name and batch_name for response using relationships
-            if existing.profile:
+            if existing and existing.profile:
                 existing.user_name = existing.profile.name
                 if existing.profile.batch:
                     existing.batch_name = existing.profile.batch.name
+                    logger.info(f"Updated attendance with batch_name: {existing.batch_name}")
                 else:
                     existing.batch_name = None
+                    logger.warning(f"No batch found for user {existing.profile.id}")
             else:
                 existing.user_name = None
                 existing.batch_name = None
+                logger.warning(f"Profile not loaded for existing attendance")
             
             return existing
 
@@ -111,19 +119,28 @@ class AttendanceService(CRUDService[Attendance]):
             },
         )
         
-        # Refresh to load relationships
+        # Refresh with explicit relationship loading
+        from sqlalchemy.orm import joinedload
         db.refresh(new_attendance)
         
+        # Re-query with joinedload to ensure relationships are loaded
+        new_attendance = db.query(Attendance).options(
+            joinedload(Attendance.profile).joinedload(Profile.batch)
+        ).filter(Attendance.id == new_attendance.id).first()
+        
         # Populate user_name and batch_name for response using relationships
-        if new_attendance.profile:
+        if new_attendance and new_attendance.profile:
             new_attendance.user_name = new_attendance.profile.name
             if new_attendance.profile.batch:
                 new_attendance.batch_name = new_attendance.profile.batch.name
+                logger.info(f"Created attendance with batch_name: {new_attendance.batch_name}")
             else:
                 new_attendance.batch_name = None
+                logger.warning(f"No batch found for user {new_attendance.profile.id}")
         else:
             new_attendance.user_name = None
             new_attendance.batch_name = None
+            logger.warning(f"Profile not loaded for new attendance")
         
         return new_attendance
 
@@ -146,6 +163,7 @@ class AttendanceService(CRUDService[Attendance]):
     ) -> list[Attendance]:
         import logging
         from sqlalchemy import asc, desc, func
+        from sqlalchemy.orm import joinedload
         from app.models.profile import Profile
         from app.models.batch import Batch
         
@@ -155,12 +173,15 @@ class AttendanceService(CRUDService[Attendance]):
         if current_user:
             logger.info(f"list_attendance called by {current_user.id} ({current_user.role})")
         
-        # Base query with INNER joins to ensure batch exists
+        # Base query with INNER joins for filtering AND eager loading for relationships
         # Using join (not outerjoin) ensures only interns WITH batches are returned
         query = db.query(Attendance).join(
             Profile, Attendance.user_id == Profile.id
         ).join(
             Batch, Profile.batch_id == Batch.id  # INNER JOIN - excludes NULL batches
+        ).options(
+            # CRITICAL: Use joinedload to populate relationships
+            joinedload(Attendance.profile).joinedload(Profile.batch)
         )
         
         # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
@@ -227,25 +248,25 @@ class AttendanceService(CRUDService[Attendance]):
         
         # Enhance results with user_name and batch_name using relationships
         for attendance in results:
-            # Use the relationship to access profile
+            # Use the relationship to access profile (should be loaded via joinedload)
             if attendance.profile:
                 attendance.user_name = attendance.profile.name
                 logger.info(f"Attendance {attendance.id}: user_name={attendance.profile.name}, batch_id={attendance.profile.batch_id}")
                 
-                # Use the relationship to access batch through profile
+                # Use the relationship to access batch through profile (should be loaded via joinedload)
                 if attendance.profile.batch:
                     attendance.batch_name = attendance.profile.batch.name
                     logger.info(f"Attendance {attendance.id}: batch_name={attendance.profile.batch.name}")
                 else:
                     attendance.batch_name = None
                     if attendance.profile.batch_id:
-                        logger.warning(f"Batch {attendance.profile.batch_id} not found for user {attendance.profile.id}")
+                        logger.warning(f"Batch relationship not loaded for user {attendance.profile.id}, batch_id={attendance.profile.batch_id}")
                     else:
                         logger.info(f"User {attendance.profile.id} has no batch_id")
             else:
                 attendance.user_name = None
                 attendance.batch_name = None
-                logger.warning(f"Profile not found for attendance {attendance.id}, user_id={attendance.user_id}")
+                logger.warning(f"Profile relationship not loaded for attendance {attendance.id}, user_id={attendance.user_id}")
         
         return results
 
