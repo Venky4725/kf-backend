@@ -30,39 +30,47 @@ class ProfileService(CRUDService[Profile]):
         if role not in VALID_PROFILE_ROLES:
             raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
         
-        # Validate and normalize batch_name (REQUIRED)
-        if not payload.batch_name or not payload.batch_name.strip():
-            from fastapi import HTTPException
-            raise HTTPException(
-                status_code=400,
-                detail="batch_name is required"
-            )
+        # CONDITIONAL VALIDATION: batch_name required only for INTERN role
+        batch_id = None
         
-        batch_name = payload.batch_name.strip()
-        logger.info(f"Creating profile with batch_name: {batch_name}")
-        
-        # Lookup batch by name (case-insensitive)
-        batch = db.query(Batch).filter(
-            func.lower(Batch.name) == batch_name.lower()
-        ).first()
-        
-        # Create batch if it doesn't exist
-        if not batch:
-            from datetime import datetime
-            logger.info(f"Batch '{batch_name}' not found, creating new batch")
-            batch = Batch(
-                name=batch_name,
-                tech_stack="General",  # Default tech stack for auto-created batches
-                start_date=datetime.utcnow().date(),  # Set to current date
-                team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
-            )
-            db.add(batch)
-            db.flush()  # Get the batch ID
-            logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
+        if role == "INTERN":
+            # Interns MUST have a batch_name
+            if not payload.batch_name or not payload.batch_name.strip():
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail="batch_name is required for INTERN role"
+                )
+            
+            batch_name = payload.batch_name.strip()
+            logger.info(f"Creating INTERN with batch_name: {batch_name}")
+            
+            # Lookup batch by name (case-insensitive)
+            batch = db.query(Batch).filter(
+                func.lower(Batch.name) == batch_name.lower()
+            ).first()
+            
+            # Create batch if it doesn't exist
+            if not batch:
+                from datetime import datetime
+                logger.info(f"Batch '{batch_name}' not found, creating new batch")
+                batch = Batch(
+                    name=batch_name,
+                    tech_stack="General",  # Default tech stack for auto-created batches
+                    start_date=datetime.utcnow().date(),  # Set to current date
+                    team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
+                )
+                db.add(batch)
+                db.flush()  # Get the batch ID
+                logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
+            else:
+                logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
+            
+            batch_id = batch.id
         else:
-            logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
-        
-        batch_id = batch.id
+            # TECH_LEAD and ADMIN do not require batch_name
+            logger.info(f"Creating {role} without batch assignment")
+            batch_id = None
 
         # Generate password hash for default password
         password_hash = hash_password(DEFAULT_PASSWORD)
@@ -75,7 +83,7 @@ class ProfileService(CRUDService[Profile]):
         if existing:
             raise ConflictError(f"A profile with email '{normalized_email}' already exists (Name: {existing.name}, Role: {existing.role}).")
 
-        logger.info(f"Creating profile: {payload.name} ({role}) in batch {batch_name}")
+        logger.info(f"Creating profile: {payload.name} ({role}) with batch_id={batch_id}")
         return self.create(
             db,
             {
