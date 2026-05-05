@@ -21,6 +21,9 @@ class AttendanceResponse(BaseModel):
     day: date
     status: str
     created_at: datetime
+    # Enhanced fields
+    user_name: str | None = None
+    batch_name: str | None = None
 
     class Config:
         from_attributes = True

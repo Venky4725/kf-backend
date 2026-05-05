@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.schemas.attendance import AttendanceCreate, AttendanceResponse, AttendanceUpdate
 from app.services.attendance_service import attendance_service
@@ -20,9 +21,48 @@ def get_attendance(
     user_id: UUID | None = None,
     start: date | None = None,
     end: date | None = None,
+    search: str | None = None,
+    batch_id: UUID | None = None,
+    attendance_date: date | None = None,
+    status: str | None = None,
+    sort_by: str | None = None,
+    order: str | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return attendance_service.list_attendance(db, skip=skip, limit=limit, user_id=user_id, start=start, end=end)
+    """
+    Get attendance records with role-based access control.
+    - ADMIN: Full access to all attendance records
+    - TECH_LEAD: Only attendance for interns in their batch
+    - INTERN: Only their own attendance records
+    
+    Query params:
+    - search: Search by user name (partial match)
+    - batch_id: Filter by batch
+    - attendance_date: Filter by specific date
+    - status: Filter by status (PRESENT, ABSENT, LEAVE)
+    - sort_by: Sort field (date, status, name)
+    - order: Sort order (asc, desc)
+    """
+    # Interns can only see their own attendance
+    if current_user.role == "INTERN":
+        user_id = current_user.id
+    
+    return attendance_service.list_attendance(
+        db,
+        skip=skip,
+        limit=limit,
+        user_id=user_id,
+        start=start,
+        end=end,
+        search=search,
+        batch_id=batch_id,
+        attendance_date=attendance_date,
+        status=status,
+        sort_by=sort_by,
+        order=order,
+        current_user=current_user,
+    )
 
 
 @router.get("/{attendance_id}", response_model=AttendanceResponse)
