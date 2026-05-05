@@ -248,25 +248,33 @@ class AttendanceService(CRUDService[Attendance]):
         
         # Enhance results with user_name and batch_name using relationships
         for attendance in results:
+            # Debug: Check if relationships are loaded
+            logger.info(f"Processing attendance {attendance.id}")
+            logger.info(f"  - attendance.profile exists: {attendance.profile is not None}")
+            
             # Use the relationship to access profile (should be loaded via joinedload)
             if attendance.profile:
                 attendance.user_name = attendance.profile.name
-                logger.info(f"Attendance {attendance.id}: user_name={attendance.profile.name}, batch_id={attendance.profile.batch_id}")
+                logger.info(f"  - user_name: {attendance.profile.name}")
+                logger.info(f"  - batch_id: {attendance.profile.batch_id}")
+                logger.info(f"  - attendance.profile.batch exists: {attendance.profile.batch is not None}")
                 
                 # Use the relationship to access batch through profile (should be loaded via joinedload)
                 if attendance.profile.batch:
                     attendance.batch_name = attendance.profile.batch.name
-                    logger.info(f"Attendance {attendance.id}: batch_name={attendance.profile.batch.name}")
+                    logger.info(f"  - ✅ batch_name: {attendance.profile.batch.name}")
                 else:
                     attendance.batch_name = None
                     if attendance.profile.batch_id:
-                        logger.warning(f"Batch relationship not loaded for user {attendance.profile.id}, batch_id={attendance.profile.batch_id}")
+                        logger.error(f"  - ❌ Batch relationship NOT loaded! user_id={attendance.profile.id}, batch_id={attendance.profile.batch_id}")
+                        logger.error(f"  - This should not happen with joinedload!")
                     else:
-                        logger.info(f"User {attendance.profile.id} has no batch_id")
+                        logger.info(f"  - User {attendance.profile.id} has no batch_id (NULL)")
             else:
                 attendance.user_name = None
                 attendance.batch_name = None
-                logger.warning(f"Profile relationship not loaded for attendance {attendance.id}, user_id={attendance.user_id}")
+                logger.error(f"  - ❌ Profile relationship NOT loaded! attendance_id={attendance.id}, user_id={attendance.user_id}")
+                logger.error(f"  - This should not happen with joinedload!")
         
         return results
 
