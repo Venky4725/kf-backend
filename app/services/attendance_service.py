@@ -55,7 +55,7 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.tech_lead_id == current_user.id
+                    Batch.team_lead_id == current_user.id
                 ).first()
                 
                 if not batch:
@@ -179,11 +179,11 @@ class AttendanceService(CRUDService[Attendance]):
         # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
         if current_user and current_user.role == "TECHNICAL_LEAD":
             # Filter by batches where this Tech Lead is assigned
-            query = query.filter(Batch.tech_lead_id == current_user.id)
-            logger.info(f"Tech Lead filter applied: tech_lead_id={current_user.id}")
+            query = query.filter(Batch.team_lead_id == current_user.id)
+            logger.info(f"Tech Lead filter applied: team_lead_id={current_user.id}")
             
             # Debug: Log batches assigned to this Tech Lead
-            tech_lead_batches = db.query(Batch).filter(Batch.tech_lead_id == current_user.id).all()
+            tech_lead_batches = db.query(Batch).filter(Batch.team_lead_id == current_user.id).all()
             batch_ids = [str(b.id) for b in tech_lead_batches]
             logger.info(f"Tech Lead {current_user.id} leads batches: {batch_ids}")
             
@@ -296,7 +296,7 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.tech_lead_id == current_user.id
+                    Batch.team_lead_id == current_user.id
                 ).first()
                 
                 if not batch:
@@ -347,7 +347,7 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.tech_lead_id == current_user.id
+                    Batch.team_lead_id == current_user.id
                 ).first()
                 
                 if not batch:

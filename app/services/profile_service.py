@@ -164,7 +164,7 @@ class ProfileService(CRUDService[Profile]):
                 # Tech Lead can only see interns in batches they lead
                 query = query.filter(
                     Profile.role == "INTERN",
-                    Batch.tech_lead_id == current_user.id
+                    Batch.team_lead_id == current_user.id
                 )
                 logger.info(f"Tech Lead filter applied: only interns in their batches")
                 
