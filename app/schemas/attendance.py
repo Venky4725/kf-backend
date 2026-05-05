@@ -2,12 +2,12 @@
 
 from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
-from datetime import date, datetime
+from datetime import date as DateType, datetime
 
 
 class AttendanceCreate(BaseModel):
     user_id: UUID
-    date: date = Field(..., alias="date")  # Accept "date" from frontend
+    day: DateType = Field(..., alias="date")  # Accept "date" from frontend, store as "day"
     status: str
     
     @field_validator('status')
@@ -24,11 +24,6 @@ class AttendanceCreate(BaseModel):
             raise ValueError(f"Status must be one of: {', '.join(sorted(valid_statuses))}")
         
         return normalized
-    
-    @property
-    def day(self) -> date:
-        """Map 'date' to 'day' for database compatibility"""
-        return self.date
     
     class Config:
         populate_by_name = True  # Allow both 'date' and 'day'
@@ -56,7 +51,7 @@ class AttendanceUpdate(BaseModel):
 class AttendanceResponse(BaseModel):
     id: UUID
     user_id: UUID
-    day: date
+    day: DateType
     status: str
     created_at: datetime
     # Enhanced fields

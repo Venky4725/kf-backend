@@ -74,8 +74,8 @@ class AttendanceService(CRUDService[Attendance]):
         # Status is already normalized by the validator
         status_value = payload.status
         
-        # Get the day value (payload.date is mapped to payload.day via property)
-        day_value = payload.date
+        # Get the day value from the payload
+        day_value = payload.day
 
         # Check for existing attendance on the same day
         existing = (
