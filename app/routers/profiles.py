@@ -148,7 +148,8 @@ async def upload_csv(
 ):
     """
     Upload CSV file to bulk create profiles.
-    CSV format: name,email,role,tech_stack,batch_name
+    CSV format: name,email,tech_stack,batch_name
+    All uploaded users are created as INTERN role by default.
     """
     import logging
     import csv
@@ -184,7 +185,7 @@ async def upload_csv(
     
     for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (header is row 1)
         try:
-            # Validate required fields
+            # Validate required fields (name, email, batch_name)
             if not row.get("name") or not row["name"].strip():
                 skipped += 1
                 errors.append(f"Row {row_num}: Missing name")
@@ -195,11 +196,6 @@ async def upload_csv(
                 errors.append(f"Row {row_num}: Missing email")
                 continue
             
-            if not row.get("role") or not row["role"].strip():
-                skipped += 1
-                errors.append(f"Row {row_num}: Missing role")
-                continue
-            
             # CRITICAL: Validate batch_name is present
             if not row.get("batch_name") or not row["batch_name"].strip():
                 skipped += 1
@@ -207,18 +203,18 @@ async def upload_csv(
                 logger.warning(f"Row {row_num} skipped: Missing batch_name")
                 continue
             
-            # Create profile
+            # Create profile with INTERN role (forced default, never from CSV)
             profile_data = ProfileCreate(
                 name=row["name"].strip(),
                 email=row["email"].strip(),
-                role=row["role"].strip(),
+                role="INTERN",  # FORCE DEFAULT - never take from CSV
                 tech_stack=row.get("tech_stack", "").strip() or None,
                 batch_name=row["batch_name"].strip()
             )
             
             profile_service.create_profile(db, profile_data, current_user)
             created += 1
-            logger.info(f"Row {row_num}: Created profile for {row['email']}")
+            logger.info(f"Row {row_num}: Created INTERN profile for {row['email']}")
             
         except Exception as e:
             skipped += 1
