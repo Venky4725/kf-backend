@@ -149,12 +149,26 @@ class ProfileService(CRUDService[Profile]):
                 if existing_profile.id == current_user.id:
                     logger.info("Tech Lead updating own profile")
                     pass
-                # Tech Lead can update interns in their batch
-                elif existing_profile.role == "INTERN" and existing_profile.batch_id == current_user.batch_id:
-                    logger.info(f"Tech Lead updating intern in their batch (batch_id: {current_user.batch_id})")
-                    pass
+                # Tech Lead can update interns in their batch (ALLOW BATCH CHANGE)
+                # Check if intern is currently in their batch OR if they're assigning to their batch
+                elif existing_profile.role == "INTERN":
+                    # Allow if intern is currently in their batch
+                    if existing_profile.batch_id == current_user.batch_id:
+                        logger.info(f"Tech Lead updating intern in their batch (batch_id: {current_user.batch_id})")
+                        pass
+                    # Also allow if Tech Lead is assigning intern TO their batch
+                    elif "batch_id" in payload.model_dump(exclude_unset=True) and payload.batch_id == current_user.batch_id:
+                        logger.info(f"Tech Lead assigning intern to their batch (batch_id: {current_user.batch_id})")
+                        pass
+                    else:
+                        logger.warning(f"Tech Lead {current_user.id} attempted to update intern {profile_id} not in their batch")
+                        from fastapi import HTTPException, status as http_status
+                        raise HTTPException(
+                            status_code=http_status.HTTP_403_FORBIDDEN,
+                            detail="You can only update interns in your batch or assign interns to your batch"
+                        )
                 else:
-                    logger.warning(f"Tech Lead {current_user.id} attempted to update unauthorized profile {profile_id}")
+                    logger.warning(f"Tech Lead {current_user.id} attempted to update non-intern profile {profile_id}")
                     from fastapi import HTTPException, status as http_status
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
