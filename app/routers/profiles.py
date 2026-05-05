@@ -154,6 +154,9 @@ async def upload_csv(
     import logging
     import csv
     import io
+    from sqlalchemy import func
+    from app.models.batch import Batch
+    from datetime import datetime
     
     logger = logging.getLogger(__name__)
     logger.info(f"CSV upload initiated by user: {current_user.id} ({current_user.role})")
@@ -183,6 +186,9 @@ async def upload_csv(
     skipped = 0
     errors = []
     
+    # CRITICAL: Batch cache to avoid creating duplicate batches
+    batch_cache = {}
+    
     for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (header is row 1)
         try:
             # Validate required fields (name, email, batch_name)
@@ -203,19 +209,63 @@ async def upload_csv(
                 logger.warning(f"Row {row_num} skipped: Missing batch_name")
                 continue
             
-            # Create profile with INTERN role (forced default, never from CSV)
+            # Normalize data
+            name = row["name"].strip()
+            email = row["email"].strip().lower()
+            tech_stack = row.get("tech_stack", "").strip() or None
+            batch_name = row["batch_name"].strip()
+            batch_name_lower = batch_name.lower()
+            
+            # Check for duplicate email (skip if exists)
+            existing_profile = db.query(Profile).filter(Profile.email == email).first()
+            if existing_profile:
+                skipped += 1
+                errors.append(f"Row {row_num}: Email '{email}' already exists")
+                logger.warning(f"Row {row_num} skipped: Duplicate email {email}")
+                continue
+            
+            # Get or create batch (with caching)
+            if batch_name_lower in batch_cache:
+                batch = batch_cache[batch_name_lower]
+                logger.info(f"Row {row_num}: Using cached batch '{batch_name}' (ID: {batch.id})")
+            else:
+                # Lookup batch by name (case-insensitive)
+                batch = db.query(Batch).filter(
+                    func.lower(Batch.name) == batch_name_lower
+                ).first()
+                
+                if not batch:
+                    # Create new batch
+                    logger.info(f"Row {row_num}: Creating new batch '{batch_name}'")
+                    batch = Batch(
+                        name=batch_name,
+                        tech_stack="General",
+                        start_date=datetime.utcnow().date(),
+                        team_lead_id=current_user.id if current_user.role == "TECHNICAL_LEAD" else None
+                    )
+                    db.add(batch)
+                    db.commit()  # CRITICAL: Commit batch immediately
+                    db.refresh(batch)
+                    logger.info(f"Created batch '{batch_name}' (ID: {batch.id})")
+                else:
+                    logger.info(f"Row {row_num}: Found existing batch '{batch_name}' (ID: {batch.id})")
+                
+                # Cache the batch for reuse
+                batch_cache[batch_name_lower] = batch
+            
+            # Create profile with INTERN role
             profile_data = ProfileCreate(
-                name=row["name"].strip(),
-                email=row["email"].strip(),
-                role="INTERN",  # FORCE DEFAULT - never take from CSV
-                tech_stack=row.get("tech_stack", "").strip() or None,
-                batch_name=row["batch_name"].strip()
+                name=name,
+                email=email,
+                role="INTERN",
+                tech_stack=tech_stack,
+                batch_name=batch_name
             )
             
-            # Each row is handled independently with its own transaction
+            # Create profile using service (handles password, validation, etc.)
             profile_service.create_profile(db, profile_data, current_user)
             created += 1
-            logger.info(f"Row {row_num}: Created INTERN profile for {row['email']}")
+            logger.info(f"Row {row_num}: Created INTERN profile for {email} in batch '{batch_name}'")
             
         except Exception as e:
             # CRITICAL: Rollback the failed transaction to prevent session corruption
@@ -227,7 +277,7 @@ async def upload_csv(
             logger.error(error_msg)
             continue
     
-    logger.info(f"CSV upload complete: {created} created, {skipped} skipped")
+    logger.info(f"CSV upload complete: {created} created, {skipped} skipped, {len(batch_cache)} batches used")
     
     return {
         "created": created,

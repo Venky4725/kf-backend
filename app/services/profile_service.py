@@ -61,12 +61,14 @@ class ProfileService(CRUDService[Profile]):
                     team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
                 )
                 db.add(batch)
-                db.flush()  # Get the batch ID
+                db.commit()  # CRITICAL: Commit batch immediately to ensure it persists
+                db.refresh(batch)  # Refresh to get the ID
                 logger.info(f"Created new batch: {batch.name} (ID: {batch.id})")
             else:
                 logger.info(f"Found existing batch: {batch.name} (ID: {batch.id})")
             
             batch_id = batch.id
+            logger.info(f"Assigning INTERN to batch_id: {batch_id}")
         else:
             # TECH_LEAD and ADMIN do not require batch_name
             logger.info(f"Creating {role} without batch assignment")
