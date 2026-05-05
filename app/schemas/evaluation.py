@@ -30,3 +30,17 @@ class EvaluationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EvaluationInternResponse(BaseModel):
+    """Response schema for interns - excludes score field"""
+    id: UUID
+    intern_id: UUID
+    reviewed_by: UUID
+    week_number: int
+    feedback: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
