@@ -212,11 +212,15 @@ async def upload_csv(
                 batch_name=row["batch_name"].strip()
             )
             
+            # Each row is handled independently with its own transaction
             profile_service.create_profile(db, profile_data, current_user)
             created += 1
             logger.info(f"Row {row_num}: Created INTERN profile for {row['email']}")
             
         except Exception as e:
+            # CRITICAL: Rollback the failed transaction to prevent session corruption
+            # This ensures subsequent rows can still be processed
+            db.rollback()
             skipped += 1
             error_msg = f"Row {row_num}: {str(e)}"
             errors.append(error_msg)
