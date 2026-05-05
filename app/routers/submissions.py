@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.schemas.submission import SubmissionCreate, SubmissionResponse, SubmissionUpdate
 from app.services.submission_service import submission_service
@@ -19,9 +20,23 @@ def get_submissions(
     limit: int = 100,
     user_id: UUID | None = None,
     submitted_for: date | None = None,
+    search: str | None = None,
+    batch_id: UUID | None = None,
+    sort_by: str | None = None,
+    order: str | None = None,
     db: Session = Depends(get_db),
 ):
-    return submission_service.list_submissions(db, skip=skip, limit=limit, user_id=user_id, submitted_for=submitted_for)
+    return submission_service.list_submissions(
+        db,
+        skip=skip,
+        limit=limit,
+        user_id=user_id,
+        submitted_for=submitted_for,
+        search=search,
+        batch_id=batch_id,
+        sort_by=sort_by,
+        order=order,
+    )
 
 
 @router.get("/{submission_id}", response_model=SubmissionResponse)
@@ -45,14 +60,16 @@ def update_submission(
     submission_id: UUID,
     payload: SubmissionUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return submission_service.update_submission(db, submission_id, payload)
+    return submission_service.update_submission(db, submission_id, payload, current_user)
 
 
 @router.delete("/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_submission(
     submission_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> Response:
-    submission_service.delete(db, submission_id)
+    submission_service.delete(db, submission_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

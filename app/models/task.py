@@ -16,6 +16,7 @@ class Task(Base):
     description = Column(Text, nullable=True)
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
+    assigned_to = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)  # NEW
 
     due_date = Column(Date, nullable=True)
 

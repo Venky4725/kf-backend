@@ -18,13 +18,24 @@ def get_batches(
     skip: int = 0,
     limit: int = 100,
     team_lead_id: UUID | None = None,
+    search: str | None = None,
+    sort_by: str | None = None,
+    order: str | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     # Tech Lead can only see their assigned batches
     if current_user.role == "TECHNICAL_LEAD":
         team_lead_id = current_user.id
-    return batch_service.list_batches(db, skip=skip, limit=limit, team_lead_id=team_lead_id)
+    return batch_service.list_batches(
+        db,
+        skip=skip,
+        limit=limit,
+        team_lead_id=team_lead_id,
+        search=search,
+        sort_by=sort_by,
+        order=order,
+    )
 
 
 @router.get("/{batch_id}", response_model=BatchResponse)

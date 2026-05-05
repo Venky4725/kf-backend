@@ -18,9 +18,20 @@ def get_tasks(
     skip: int = 0,
     limit: int = 100,
     batch_id: UUID | None = None,
+    search: str | None = None,
+    sort_by: str | None = None,
+    order: str | None = None,
     db: Session = Depends(get_db),
 ):
-    return task_service.list_tasks(db, skip=skip, limit=limit, batch_id=batch_id)
+    return task_service.list_tasks(
+        db,
+        skip=skip,
+        limit=limit,
+        batch_id=batch_id,
+        search=search,
+        sort_by=sort_by,
+        order=order,
+    )
 
 
 @router.get("/{task_id}", response_model=TaskResponse)

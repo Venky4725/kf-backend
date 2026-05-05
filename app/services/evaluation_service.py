@@ -62,13 +62,44 @@ class EvaluationService(CRUDService[Evaluation]):
         limit: int = 100,
         intern_id: UUID | None = None,
         reviewed_by: UUID | None = None,
+        search: str | None = None,
+        batch_id: UUID | None = None,
+        sort_by: str | None = None,
+        order: str | None = None,
     ) -> list[Evaluation]:
+        from sqlalchemy import asc, desc
+        
         query = db.query(Evaluation)
+        
         if intern_id:
             query = query.filter(Evaluation.intern_id == intern_id)
         if reviewed_by:
             query = query.filter(Evaluation.reviewed_by == reviewed_by)
-        return query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc()).offset(skip).limit(limit).all()
+        
+        # Filter by batch_id (join with profile)
+        if batch_id:
+            query = query.join(Profile, Evaluation.intern_id == Profile.id)
+            query = query.filter(Profile.batch_id == batch_id)
+        
+        # Search in feedback
+        if search and search.strip():
+            query = query.filter(Evaluation.feedback.ilike(f"%{search.strip()}%"))
+        
+        # Sorting
+        VALID_SORT_FIELDS = {"week_number", "score", "created_at"}
+        if sort_by and sort_by in VALID_SORT_FIELDS:
+            order_func = desc if order and order.lower() == "desc" else asc
+            if sort_by == "week_number":
+                query = query.order_by(order_func(Evaluation.week_number))
+            elif sort_by == "score":
+                query = query.order_by(order_func(Evaluation.score))
+            elif sort_by == "created_at":
+                query = query.order_by(order_func(Evaluation.created_at))
+        else:
+            # Default sorting
+            query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
+        
+        return query.offset(skip).limit(limit).all()
 
     def update_evaluation(self, db: Session, evaluation_id: UUID, payload: EvaluationUpdate, current_user) -> Evaluation:
         # Check access before update

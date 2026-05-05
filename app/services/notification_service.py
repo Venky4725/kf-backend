@@ -43,7 +43,15 @@ class NotificationService(CRUDService[Notification]):
             raise
 
     def broadcast_notification(self, db: Session, payload: NotificationBroadcast, current_user) -> dict:
-        """Create broadcast notification for all active users"""
+        """Create broadcast notification for all active users - ADMIN ONLY"""
+        # Only ADMIN can broadcast
+        if current_user.role != "ADMIN":
+            from fastapi import HTTPException, status as http_status
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can broadcast notifications"
+            )
+        
         try:
             # Get all active users
             active_users = db.query(Profile).filter(Profile.is_active == True).all()
@@ -144,11 +152,41 @@ class NotificationService(CRUDService[Notification]):
         db: Session,
         notification_id: UUID,
         payload: NotificationUpdate,
+        current_user=None,
     ) -> Notification:
         try:
+            # Check access - user can only update their own notifications
+            if current_user:
+                notification = self.get(db, notification_id)
+                if notification.user_id != current_user.id:
+                    from fastapi import HTTPException, status as http_status
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail="You can only update your own notifications"
+                    )
+            
             return self.update(db, notification_id, {"is_read": payload.is_read})
         except Exception as e:
             logger.error(f"Error updating notification: {e}")
+            raise
+
+    def delete(self, db: Session, notification_id: UUID, current_user=None) -> None:
+        """Delete notification - user can only delete their own"""
+        try:
+            # Check access - user can only delete their own notifications
+            if current_user:
+                notification = self.get(db, notification_id)
+                if notification.user_id != current_user.id:
+                    from fastapi import HTTPException, status as http_status
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail="You can only delete your own notifications"
+                    )
+            
+            # Call parent delete
+            super().delete(db, notification_id)
+        except Exception as e:
+            logger.error(f"Error deleting notification: {e}")
             raise
 
     def _ensure_profile_exists(self, db: Session, profile_id: UUID) -> None:

@@ -19,6 +19,10 @@ def get_evaluations(
     limit: int = 100,
     intern_id: UUID | None = None,
     reviewed_by: UUID | None = None,
+    search: str | None = None,
+    batch_id: UUID | None = None,
+    sort_by: str | None = None,
+    order: str | None = None,
     db: Session = Depends(get_db),
 ):
     return evaluation_service.list_evaluations(
@@ -27,6 +31,10 @@ def get_evaluations(
         limit=limit,
         intern_id=intern_id,
         reviewed_by=reviewed_by,
+        search=search,
+        batch_id=batch_id,
+        sort_by=sort_by,
+        order=order,
     )
 
 

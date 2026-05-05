@@ -9,12 +9,14 @@ class TaskCreate(BaseModel):
     title: str
     description: str | None = None
     batch_id: UUID
+    assigned_to: UUID | None = None  # NEW
     due_date: date | None = None
 
 
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    assigned_to: UUID | None = None  # NEW
     due_date: date | None = None
 
 
@@ -23,6 +25,7 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     batch_id: UUID
+    assigned_to: UUID | None = None  # NEW
     due_date: date | None
     created_at: datetime
     updated_at: datetime

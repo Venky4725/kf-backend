@@ -66,14 +66,16 @@ def update_notification(
     notification_id: UUID,
     payload: NotificationUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return notification_service.update_notification(db, notification_id, payload)
+    return notification_service.update_notification(db, notification_id, payload, current_user)
 
 
 @router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_notification(
     notification_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> Response:
-    notification_service.delete(db, notification_id)
+    notification_service.delete(db, notification_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

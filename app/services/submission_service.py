@@ -1,8 +1,11 @@
 from datetime import date
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc
 
+from app.models.batch import Batch
 from app.models.submission import Submission
 from app.models.profile import Profile
 from app.schemas.submission import SubmissionCreate, SubmissionUpdate
@@ -45,13 +48,45 @@ class SubmissionService(CRUDService[Submission]):
         limit: int = 100,
         user_id: UUID | None = None,
         submitted_for: date | None = None,
+        search: str | None = None,
+        batch_id: UUID | None = None,
+        sort_by: str | None = None,
+        order: str | None = None,
     ) -> list[Submission]:
         query = db.query(Submission)
+        
+        # Filter by user_id
         if user_id:
             query = query.filter(Submission.user_id == user_id)
+        
+        # Filter by submitted_for date
         if submitted_for:
             query = query.filter(Submission.submitted_for == submitted_for)
-        submissions = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc()).offset(skip).limit(limit).all()
+        
+        # Filter by batch_id (join with profile)
+        if batch_id:
+            query = query.join(Profile, Submission.user_id == Profile.id)
+            query = query.filter(Profile.batch_id == batch_id)
+        
+        # Search in content
+        if search and search.strip():
+            query = query.filter(Submission.content.ilike(f"%{search.strip()}%"))
+        
+        # Sorting
+        VALID_SORT_FIELDS = {"submitted_for", "created_at", "content"}
+        if sort_by and sort_by in VALID_SORT_FIELDS:
+            order_func = desc if order and order.lower() == "desc" else asc
+            if sort_by == "submitted_for":
+                query = query.order_by(order_func(Submission.submitted_for))
+            elif sort_by == "created_at":
+                query = query.order_by(order_func(Submission.created_at))
+            elif sort_by == "content":
+                query = query.order_by(order_func(Submission.content))
+        else:
+            # Default sorting
+            query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
+        
+        submissions = query.offset(skip).limit(limit).all()
         
         # Add submitted_by_name by joining with profile
         result = []
@@ -65,12 +100,81 @@ class SubmissionService(CRUDService[Submission]):
         
         return result
 
-    def update_submission(self, db: Session, submission_id: UUID, payload: SubmissionUpdate) -> Submission:
+    def update_submission(self, db: Session, submission_id: UUID, payload: SubmissionUpdate, current_user) -> Submission:
+        # Check access before update
+        submission = self.get(db, submission_id)
+        
+        if current_user.role == "ADMIN":
+            # Admin can update any submission
+            pass
+        elif current_user.role == "TECHNICAL_LEAD":
+            # Tech Lead can update submissions from interns in their batch
+            intern = db.get(Profile, submission.user_id)
+            if intern.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot update submission for intern not in any batch"
+                )
+            batch = db.get(Batch, intern.batch_id)
+            if batch.team_lead_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead can only update submissions from their assigned batch"
+                )
+        elif current_user.role == "INTERN":
+            # Intern can only update their own submissions
+            if submission.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only update your own submissions"
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Unauthorized to update submissions"
+            )
+        
         return self.update(db, submission_id, {"content": payload.content.strip()})
 
-    def _ensure_profile_exists(self, db: Session, profile_id: UUID) -> None:
-        from app.models.profile import Profile
+    def delete(self, db: Session, submission_id: UUID, current_user=None) -> None:
+        # Check access before delete
+        if current_user:
+            submission = self.get(db, submission_id)
+            
+            if current_user.role == "ADMIN":
+                # Admin can delete any submission
+                pass
+            elif current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can delete submissions from interns in their batch
+                intern = db.get(Profile, submission.user_id)
+                if intern.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot delete submission for intern not in any batch"
+                    )
+                batch = db.get(Batch, intern.batch_id)
+                if batch.team_lead_id != current_user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only delete submissions from their assigned batch"
+                    )
+            elif current_user.role == "INTERN":
+                # Intern can only delete their own submissions
+                if submission.user_id != current_user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You can only delete your own submissions"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Unauthorized to delete submissions"
+                )
+        
+        # Call parent delete
+        super().delete(db, submission_id)
 
+    def _ensure_profile_exists(self, db: Session, profile_id: UUID) -> None:
         if db.get(Profile, profile_id) is None:
             raise ConflictError(f"Profile '{profile_id}' does not exist.")
 

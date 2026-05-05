@@ -37,8 +37,14 @@ class BatchService(CRUDService[Batch]):
         skip: int = 0,
         limit: int = 100,
         team_lead_id: UUID | None = None,
+        search: str | None = None,
+        sort_by: str | None = None,
+        order: str | None = None,
     ) -> list[Batch]:
+        from sqlalchemy import asc, desc
+        
         query = db.query(Batch)
+        
         if team_lead_id:
             # Find batches where:
             # 1. team_lead_id matches (batch assigned TO the TL), OR
@@ -54,7 +60,31 @@ class BatchService(CRUDService[Batch]):
                 # TL has no batch_id, only check team_lead_id
                 query = query.filter(Batch.team_lead_id == team_lead_id)
         
-        return query.order_by(Batch.start_date.desc(), Batch.created_at.desc()).offset(skip).limit(limit).all()
+        # Search in name and tech_stack
+        if search and search.strip():
+            search_pattern = f"%{search.strip()}%"
+            query = query.filter(
+                (Batch.name.ilike(search_pattern)) |
+                (Batch.tech_stack.ilike(search_pattern))
+            )
+        
+        # Sorting
+        VALID_SORT_FIELDS = {"name", "tech_stack", "start_date", "created_at"}
+        if sort_by and sort_by in VALID_SORT_FIELDS:
+            order_func = desc if order and order.lower() == "desc" else asc
+            if sort_by == "name":
+                query = query.order_by(order_func(Batch.name))
+            elif sort_by == "tech_stack":
+                query = query.order_by(order_func(Batch.tech_stack))
+            elif sort_by == "start_date":
+                query = query.order_by(order_func(Batch.start_date))
+            elif sort_by == "created_at":
+                query = query.order_by(order_func(Batch.created_at))
+        else:
+            # Default sorting
+            query = query.order_by(Batch.start_date.desc(), Batch.created_at.desc())
+        
+        return query.offset(skip).limit(limit).all()
 
     def update_batch(self, db: Session, batch_id: UUID, payload: BatchUpdate) -> Batch:
         updates = payload.model_dump(exclude_unset=True)
