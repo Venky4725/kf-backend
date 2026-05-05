@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.schemas.evaluation import EvaluationCreate, EvaluationResponse, EvaluationUpdate
 from app.services.evaluation_service import evaluation_service
@@ -41,8 +42,9 @@ def get_evaluation(
 def create_evaluation(
     payload: EvaluationCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return evaluation_service.create_evaluation(db, payload)
+    return evaluation_service.create_evaluation(db, payload, current_user)
 
 
 @router.put("/{evaluation_id}", response_model=EvaluationResponse)
@@ -50,14 +52,16 @@ def update_evaluation(
     evaluation_id: UUID,
     payload: EvaluationUpdate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return evaluation_service.update_evaluation(db, evaluation_id, payload)
+    return evaluation_service.update_evaluation(db, evaluation_id, payload, current_user)
 
 
 @router.delete("/{evaluation_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_evaluation(
     evaluation_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ) -> Response:
-    evaluation_service.delete(db, evaluation_id)
+    evaluation_service.delete(db, evaluation_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

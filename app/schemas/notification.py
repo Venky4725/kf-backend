@@ -9,6 +9,12 @@ class NotificationCreate(BaseModel):
     user_id: UUID
     title: str
     message: str
+    type: str | None = None
+
+
+class NotificationBroadcast(BaseModel):
+    message: str
+    type: str = "SYSTEM"
 
 
 class NotificationUpdate(BaseModel):
@@ -20,7 +26,9 @@ class NotificationResponse(BaseModel):
     user_id: UUID
     title: str
     message: str
+    type: str | None
     is_read: bool
+    is_broadcast: bool
     created_at: datetime
 
     class Config:

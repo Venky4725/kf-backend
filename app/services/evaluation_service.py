@@ -1,7 +1,9 @@
 from uuid import UUID
 
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.batch import Batch
 from app.models.evaluation import Evaluation
 from app.models.profile import Profile
 from app.schemas.evaluation import EvaluationCreate, EvaluationUpdate
@@ -14,7 +16,7 @@ class EvaluationService(CRUDService[Evaluation]):
     resource_name = "Evaluation"
     table_name = "evaluations"
 
-    def create_evaluation(self, db: Session, payload: EvaluationCreate) -> Evaluation:
+    def create_evaluation(self, db: Session, payload: EvaluationCreate, current_user) -> Evaluation:
         intern = self._get_profile(db, payload.intern_id, "intern")
         reviewer = self._get_profile(db, payload.reviewed_by, "reviewer")
 
@@ -26,6 +28,20 @@ class EvaluationService(CRUDService[Evaluation]):
             raise ValidationError("Week number must be greater than or equal to 1.")
         if payload.score < 0 or payload.score > 5:
             raise ValidationError("Score must be between 0 and 5.")
+        
+        # Tech Lead can only create evaluations for interns in their assigned batches
+        if current_user.role == "TECHNICAL_LEAD":
+            if intern.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot evaluate intern not assigned to any batch"
+                )
+            batch = db.get(Batch, intern.batch_id)
+            if batch.team_lead_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead can only evaluate interns in their assigned batches"
+                )
 
         return self.create(
             db,
@@ -54,13 +70,52 @@ class EvaluationService(CRUDService[Evaluation]):
             query = query.filter(Evaluation.reviewed_by == reviewed_by)
         return query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc()).offset(skip).limit(limit).all()
 
-    def update_evaluation(self, db: Session, evaluation_id: UUID, payload: EvaluationUpdate) -> Evaluation:
+    def update_evaluation(self, db: Session, evaluation_id: UUID, payload: EvaluationUpdate, current_user) -> Evaluation:
+        # Check access before update
+        evaluation = self.get(db, evaluation_id)
+        
+        if current_user.role == "TECHNICAL_LEAD":
+            intern = db.get(Profile, evaluation.intern_id)
+            if intern.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot update evaluation for intern not in any batch"
+                )
+            batch = db.get(Batch, intern.batch_id)
+            if batch.team_lead_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead can only update evaluations in their assigned batches"
+                )
+        
         updates = payload.model_dump(exclude_unset=True)
         if "score" in updates and updates["score"] is not None and (updates["score"] < 0 or updates["score"] > 5):
             raise ValidationError("Score must be between 0 and 5.")
         if "feedback" in updates and updates["feedback"] is not None:
             updates["feedback"] = updates["feedback"].strip()
         return self.update(db, evaluation_id, updates)
+
+    def delete(self, db: Session, evaluation_id: UUID, current_user=None) -> None:
+        # Check access before delete
+        if current_user:
+            evaluation = self.get(db, evaluation_id)
+            
+            if current_user.role == "TECHNICAL_LEAD":
+                intern = db.get(Profile, evaluation.intern_id)
+                if intern.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot delete evaluation for intern not in any batch"
+                    )
+                batch = db.get(Batch, intern.batch_id)
+                if batch.team_lead_id != current_user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only delete evaluations in their assigned batches"
+                    )
+        
+        # Call parent delete
+        super().delete(db, evaluation_id)
 
     def _get_profile(self, db: Session, profile_id: UUID, label: str) -> Profile:
         profile = db.get(Profile, profile_id)

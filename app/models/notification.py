@@ -1,6 +1,6 @@
 # app/models/notification.py
 
-from sqlalchemy import Column, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -16,7 +16,9 @@ class Notification(Base):
 
     title = Column(Text, nullable=False)
     message = Column(Text, nullable=False)
+    type = Column(String, nullable=True)  # SYSTEM, INFO, WARNING, etc.
 
     is_read = Column(Boolean, default=False)
+    is_broadcast = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

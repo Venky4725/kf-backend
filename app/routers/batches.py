@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.schemas.batch import BatchCreate, BatchResponse, BatchUpdate
 from app.services.batch_service import batch_service
@@ -18,7 +19,11 @@ def get_batches(
     limit: int = 100,
     team_lead_id: UUID | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
+    # Tech Lead can only see their assigned batches
+    if current_user.role == "TECHNICAL_LEAD":
+        team_lead_id = current_user.id
     return batch_service.list_batches(db, skip=skip, limit=limit, team_lead_id=team_lead_id)
 
 

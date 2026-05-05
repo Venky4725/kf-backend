@@ -5,8 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.schemas.notification import NotificationCreate, NotificationResponse, NotificationUpdate
+from app.schemas.notification import NotificationBroadcast, NotificationCreate, NotificationResponse, NotificationUpdate
 from app.services.notification_service import notification_service
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
@@ -18,9 +19,21 @@ def get_notifications(
     limit: int = 100,
     user_id: UUID | None = None,
     is_read: bool | None = None,
+    search: str | None = None,
+    type: str | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return notification_service.list_notifications(db, skip=skip, limit=limit, user_id=user_id, is_read=is_read)
+    return notification_service.list_notifications(
+        db,
+        skip=skip,
+        limit=limit,
+        user_id=user_id,
+        is_read=is_read,
+        search=search,
+        type=type,
+        current_user=current_user,
+    )
 
 
 @router.get("/{notification_id}", response_model=NotificationResponse)
@@ -37,6 +50,15 @@ def create_notification(
     db: Session = Depends(get_db),
 ):
     return notification_service.create_notification(db, payload)
+
+
+@router.post("/broadcast", response_model=dict, status_code=status.HTTP_201_CREATED)
+def broadcast_notification(
+    payload: NotificationBroadcast,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return notification_service.broadcast_notification(db, payload, current_user)
 
 
 @router.put("/{notification_id}", response_model=NotificationResponse)
