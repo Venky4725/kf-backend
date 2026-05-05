@@ -71,12 +71,16 @@ class AttendanceService(CRUDService[Attendance]):
                     detail="Interns cannot create attendance records"
                 )
         
-        status_value = self._normalize_status(payload.status)
+        # Status is already normalized by the validator
+        status_value = payload.status
+        
+        # Get the day value (payload.date is mapped to payload.day via property)
+        day_value = payload.date
 
         # Check for existing attendance on the same day
         existing = (
             db.query(Attendance)
-            .filter(Attendance.user_id == payload.user_id, Attendance.day == payload.day)
+            .filter(Attendance.user_id == payload.user_id, Attendance.day == day_value)
             .first()
         )
         
@@ -109,12 +113,12 @@ class AttendanceService(CRUDService[Attendance]):
             return existing
 
         # Create new attendance record
-        logger.info(f"Creating new attendance for user {payload.user_id} on {payload.day}")
+        logger.info(f"Creating new attendance for user {payload.user_id} on {day_value}")
         new_attendance = self.create(
             db,
             {
                 "user_id": payload.user_id,
-                "day": payload.day,
+                "day": day_value,
                 "status": status_value,
             },
         )
@@ -327,7 +331,7 @@ class AttendanceService(CRUDService[Attendance]):
                     detail="Interns cannot update attendance records"
                 )
         
-        return self.update(db, attendance_id, {"status": self._normalize_status(payload.status)})
+        return self.update(db, attendance_id, {"status": payload.status})
     
     def delete_attendance(self, db: Session, attendance_id: UUID, current_user=None) -> None:
         import logging
