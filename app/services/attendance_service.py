@@ -87,22 +87,14 @@ class AttendanceService(CRUDService[Attendance]):
             db.commit()
             db.refresh(existing)
             
-            # Populate user_name and batch_name for response
-            try:
-                user = db.query(Profile).filter(Profile.id == existing.user_id).first()
-                if user:
-                    existing.user_name = user.name
-                    if user.batch_id:
-                        from app.models.batch import Batch
-                        batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
-                        existing.batch_name = batch.name if batch else None
-                    else:
-                        existing.batch_name = None
+            # Populate user_name and batch_name for response using relationships
+            if existing.profile:
+                existing.user_name = existing.profile.name
+                if existing.profile.batch:
+                    existing.batch_name = existing.profile.batch.name
                 else:
-                    existing.user_name = None
                     existing.batch_name = None
-            except Exception as e:
-                logger.error(f"Error populating attendance fields: {e}")
+            else:
                 existing.user_name = None
                 existing.batch_name = None
             
@@ -119,22 +111,17 @@ class AttendanceService(CRUDService[Attendance]):
             },
         )
         
-        # Populate user_name and batch_name for response
-        try:
-            user = db.query(Profile).filter(Profile.id == new_attendance.user_id).first()
-            if user:
-                new_attendance.user_name = user.name
-                if user.batch_id:
-                    from app.models.batch import Batch
-                    batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
-                    new_attendance.batch_name = batch.name if batch else None
-                else:
-                    new_attendance.batch_name = None
+        # Refresh to load relationships
+        db.refresh(new_attendance)
+        
+        # Populate user_name and batch_name for response using relationships
+        if new_attendance.profile:
+            new_attendance.user_name = new_attendance.profile.name
+            if new_attendance.profile.batch:
+                new_attendance.batch_name = new_attendance.profile.batch.name
             else:
-                new_attendance.user_name = None
                 new_attendance.batch_name = None
-        except Exception as e:
-            logger.error(f"Error populating attendance fields: {e}")
+        else:
             new_attendance.user_name = None
             new_attendance.batch_name = None
         
@@ -238,28 +225,27 @@ class AttendanceService(CRUDService[Attendance]):
         # Apply pagination
         results = query.offset(skip).limit(limit).all()
         
-        # Enhance results with user_name and batch_name
+        # Enhance results with user_name and batch_name using relationships
         for attendance in results:
-            user = db.query(Profile).filter(Profile.id == attendance.user_id).first()
-            if user:
-                attendance.user_name = user.name
-                logger.info(f"Attendance {attendance.id}: user_name={user.name}, batch_id={user.batch_id}")
+            # Use the relationship to access profile
+            if attendance.profile:
+                attendance.user_name = attendance.profile.name
+                logger.info(f"Attendance {attendance.id}: user_name={attendance.profile.name}, batch_id={attendance.profile.batch_id}")
                 
-                if user.batch_id:
-                    batch = db.query(Batch).filter(Batch.id == user.batch_id).first()
-                    if batch:
-                        attendance.batch_name = batch.name
-                        logger.info(f"Attendance {attendance.id}: batch_name={batch.name}")
-                    else:
-                        attendance.batch_name = None
-                        logger.warning(f"Batch {user.batch_id} not found for user {user.id}")
+                # Use the relationship to access batch through profile
+                if attendance.profile.batch:
+                    attendance.batch_name = attendance.profile.batch.name
+                    logger.info(f"Attendance {attendance.id}: batch_name={attendance.profile.batch.name}")
                 else:
                     attendance.batch_name = None
-                    logger.info(f"User {user.id} has no batch_id")
+                    if attendance.profile.batch_id:
+                        logger.warning(f"Batch {attendance.profile.batch_id} not found for user {attendance.profile.id}")
+                    else:
+                        logger.info(f"User {attendance.profile.id} has no batch_id")
             else:
                 attendance.user_name = None
                 attendance.batch_name = None
-                logger.warning(f"User {attendance.user_id} not found")
+                logger.warning(f"Profile not found for attendance {attendance.id}, user_id={attendance.user_id}")
         
         return results
 
