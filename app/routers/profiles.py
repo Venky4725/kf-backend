@@ -73,7 +73,15 @@ def update_profile(
     current_user=Depends(auth_get_current_user),
 ):
     """Update a profile with access control."""
-    return profile_service.update_profile(db, profile_id, payload, current_user)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"PUT /profiles/{profile_id} - Payload: {payload.model_dump(exclude_unset=True)}")
+    logger.info(f"Current user: {current_user.id} ({current_user.role})")
+    
+    result = profile_service.update_profile(db, profile_id, payload, current_user)
+    
+    logger.info(f"Update successful - Returning: name={result.name}, email={result.email}, tech_stack={result.tech_stack}, batch_id={result.batch_id}")
+    return result
 
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)

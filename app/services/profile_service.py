@@ -126,23 +126,35 @@ class ProfileService(CRUDService[Profile]):
         return query.offset(skip).limit(limit).all()
 
     def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate, current_user=None) -> Profile:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log incoming request
+        logger.info(f"Updating profile {profile_id} with payload: {payload.model_dump(exclude_unset=True)}")
+        
         # Get the existing profile first
         existing_profile = self.get(db, profile_id)
+        logger.info(f"Existing profile: name={existing_profile.name}, email={existing_profile.email}, tech_stack={existing_profile.tech_stack}, batch_id={existing_profile.batch_id}")
         
         # Access control
         if current_user:
+            logger.info(f"Current user: {current_user.id} ({current_user.role})")
             # ADMIN can update any profile
             if current_user.role == "ADMIN":
+                logger.info("Admin access granted")
                 pass
             # TECHNICAL_LEAD can only update their own profile or interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
                 # Tech Lead can update their own profile
                 if existing_profile.id == current_user.id:
+                    logger.info("Tech Lead updating own profile")
                     pass
                 # Tech Lead can update interns in their batch
                 elif existing_profile.role == "INTERN" and existing_profile.batch_id == current_user.batch_id:
+                    logger.info(f"Tech Lead updating intern in their batch (batch_id: {current_user.batch_id})")
                     pass
                 else:
+                    logger.warning(f"Tech Lead {current_user.id} attempted to update unauthorized profile {profile_id}")
                     from fastapi import HTTPException, status as http_status
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
@@ -151,42 +163,58 @@ class ProfileService(CRUDService[Profile]):
             # INTERN can only update their own profile
             elif current_user.role == "INTERN":
                 if existing_profile.id != current_user.id:
+                    logger.warning(f"Intern {current_user.id} attempted to update another profile {profile_id}")
                     from fastapi import HTTPException, status as http_status
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
                         detail="You can only update your own profile"
                     )
+                else:
+                    logger.info("Intern updating own profile")
         
         updates = payload.model_dump(exclude_unset=True)
+        logger.info(f"Updates to apply: {updates}")
         
         # Validate batch exists if being updated
         if "batch_id" in updates and updates["batch_id"] is not None:
+            logger.info(f"Validating batch_id: {updates['batch_id']}")
             self._ensure_batch_exists(db, updates["batch_id"])
         
         # Normalize name if being updated
         if "name" in updates and updates["name"] is not None:
+            original_name = updates["name"]
             updates["name"] = updates["name"].strip()
+            logger.info(f"Normalized name: '{original_name}' -> '{updates['name']}'")
         
         # Handle email update with uniqueness check
         if "email" in updates and updates["email"] is not None:
             normalized_email = updates["email"].lower().strip()
+            logger.info(f"Normalizing email: '{updates['email']}' -> '{normalized_email}'")
             
             # Only check for duplicates if email is actually changing
             if normalized_email != existing_profile.email:
+                logger.info(f"Email is changing from '{existing_profile.email}' to '{normalized_email}', checking for duplicates")
                 existing_with_email = db.query(Profile).filter(
                     Profile.email == normalized_email,
                     Profile.id != profile_id
                 ).first()
                 
                 if existing_with_email:
+                    logger.error(f"Email '{normalized_email}' already in use by profile {existing_with_email.id}")
                     raise ConflictError(
                         f"Email '{normalized_email}' is already in use by another profile "
                         f"(Name: {existing_with_email.name}, Role: {existing_with_email.role})."
                     )
+            else:
+                logger.info("Email unchanged, skipping duplicate check")
             
             updates["email"] = normalized_email
         
-        return self.update(db, profile_id, updates)
+        logger.info(f"Calling base update with: {updates}")
+        updated_profile = self.update(db, profile_id, updates)
+        logger.info(f"Profile updated successfully: name={updated_profile.name}, email={updated_profile.email}, tech_stack={updated_profile.tech_stack}, batch_id={updated_profile.batch_id}")
+        
+        return updated_profile
 
     def delete_profile(self, db: Session, profile_id: UUID) -> None:
         """
