@@ -8,7 +8,7 @@ from sqlalchemy import or_, func
 from app.models.batch import Batch
 from app.models.evaluation import Evaluation
 from app.models.profile import Profile
-from app.schemas.evaluation import EvaluationCreate, EvaluationUpdate
+from app.schemas.evaluation import EvaluationCreate, EvaluationUpdate, EvaluationUpdateTechLead, EvaluationUpdateAdmin
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError, ValidationError
 
@@ -136,49 +136,117 @@ class EvaluationService(CRUDService[Evaluation]):
             # Return empty list instead of crashing
             return []
 
-    def update_evaluation(self, db: Session, evaluation_id: UUID, payload: EvaluationUpdate, current_user) -> Evaluation:
+    def update_evaluation(
+        self, 
+        db: Session, 
+        evaluation_id: UUID, 
+        payload: EvaluationUpdate | EvaluationUpdateTechLead | EvaluationUpdateAdmin, 
+        current_user
+    ) -> Evaluation:
+        """
+        Update evaluation with role-based field restrictions.
+        
+        ADMIN: Can update all fields (week_number, score, feedback, intern_id, reviewed_by)
+        TECHNICAL_LEAD: Can only update week_number, score, feedback for evaluations in their assigned batches
+        """
         # Check access before update
         evaluation = self.get(db, evaluation_id)
         
         if current_user.role == "TECHNICAL_LEAD":
+            # Tech Lead can only update evaluations in their assigned batches
             intern = db.get(Profile, evaluation.intern_id)
+            if intern is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Intern profile not found"
+                )
             if intern.batch_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot update evaluation for intern not in any batch"
                 )
             batch = db.get(Batch, intern.batch_id)
-            if batch.team_lead_id != current_user.id:
+            if batch is None or batch.team_lead_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Tech Lead can only update evaluations in their assigned batches"
                 )
+            
+            # CRITICAL: Tech Lead cannot change intern_id or reviewed_by
+            # This is enforced at schema level (EvaluationUpdateTechLead) but double-check here
+            updates = payload.model_dump(exclude_unset=True)
+            if "intern_id" in updates or "reviewed_by" in updates:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Leads cannot change the intern or reviewer of an evaluation"
+                )
+        elif current_user.role == "ADMIN":
+            # Admin has full access
+            updates = payload.model_dump(exclude_unset=True)
+        else:
+            # Other roles not allowed
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to update evaluations"
+            )
         
-        updates = payload.model_dump(exclude_unset=True)
-        if "score" in updates and updates["score"] is not None and (updates["score"] < 0 or updates["score"] > 5):
-            raise ValidationError("Score must be between 0 and 5.")
+        # Sanitize feedback
         if "feedback" in updates and updates["feedback"] is not None:
             updates["feedback"] = updates["feedback"].strip()
+            
+        # Validate intern_id if being changed (ADMIN only)
+        if "intern_id" in updates and updates["intern_id"]:
+            intern = self._get_profile(db, updates["intern_id"], "intern")
+            if intern.role != "INTERN":
+                raise ValidationError("Evaluation target must have role INTERN.")
+                
+        # Validate reviewed_by if being changed (ADMIN only)
+        if "reviewed_by" in updates and updates["reviewed_by"]:
+            reviewer = self._get_profile(db, updates["reviewed_by"], "reviewer")
+            if reviewer.role not in {"TECHNICAL_LEAD", "ADMIN"}:
+                raise ValidationError("Reviewer must have role TECHNICAL_LEAD or ADMIN.")
+
         return self.update(db, evaluation_id, updates)
 
     def delete(self, db: Session, evaluation_id: UUID, current_user=None) -> None:
+        """
+        Delete evaluation with role-based authorization.
+        
+        ADMIN: Can delete any evaluation
+        TECHNICAL_LEAD: Can only delete evaluations for interns in their assigned batches
+        """
         # Check access before delete
         if current_user:
             evaluation = self.get(db, evaluation_id)
             
             if current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can only delete evaluations in their assigned batches
                 intern = db.get(Profile, evaluation.intern_id)
+                if intern is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Intern profile not found"
+                    )
                 if intern.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Cannot delete evaluation for intern not in any batch"
                     )
                 batch = db.get(Batch, intern.batch_id)
-                if batch.team_lead_id != current_user.id:
+                if batch is None or batch.team_lead_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only delete evaluations in their assigned batches"
                     )
+            elif current_user.role == "ADMIN":
+                # Admin can delete any evaluation
+                pass
+            else:
+                # Other roles not allowed
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You do not have permission to delete evaluations"
+                )
         
         # Call parent delete
         super().delete(db, evaluation_id)

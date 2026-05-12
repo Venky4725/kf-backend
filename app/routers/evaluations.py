@@ -12,6 +12,8 @@ from app.schemas.evaluation import (
     EvaluationCreate, 
     EvaluationResponse, 
     EvaluationUpdate,
+    EvaluationUpdateTechLead,
+    EvaluationUpdateAdmin,
     EvaluationInternResponse
 )
 from app.services.evaluation_service import evaluation_service
@@ -243,6 +245,16 @@ def update_evaluation(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """
+    Update evaluation with role-based field restrictions.
+    
+    ADMIN: Can update all fields (week_number, score, feedback, intern_id, reviewed_by)
+    TECHNICAL_LEAD: Can only update week_number, score, feedback for evaluations in their assigned batches
+    
+    Security: All restrictions enforced server-side. Direct API manipulation attempts will fail.
+    """
+    # Role-based schema enforcement happens at service layer
+    # The payload accepts all fields but service layer filters based on role
     return evaluation_service.update_evaluation(db, evaluation_id, payload, current_user)
 
 
@@ -252,5 +264,13 @@ def delete_evaluation(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> Response:
+    """
+    Delete evaluation with role-based authorization.
+    
+    ADMIN: Can delete any evaluation
+    TECHNICAL_LEAD: Can only delete evaluations for interns in their assigned batches
+    
+    Security: All restrictions enforced server-side. Direct API manipulation attempts will fail.
+    """
     evaluation_service.delete(db, evaluation_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
