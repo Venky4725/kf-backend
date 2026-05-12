@@ -179,16 +179,35 @@ def get_evaluations(
     batch_id: UUID | None = None,
     sort_by: str | None = None,
     order: str | None = None,
+    score_min: float | None = None,
+    score_max: float | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
-    Get evaluations with role-based filtering.
+    Get evaluations with role-based filtering, searching, and sorting.
+    
+    Query Parameters:
+    - skip: Pagination offset (default: 0)
+    - limit: Max results per page (default: 100)
+    - intern_id: Filter by specific intern UUID
+    - reviewed_by: Filter by specific reviewer UUID
+    - week_number: Filter by specific week number
+    - batch_id: Filter by specific batch UUID
+    - score_min: Filter by minimum score (0-5)
+    - score_max: Filter by maximum score (0-5)
+    - search: Search in intern name, feedback (partial match)
+    - sort_by: Sort field (week_number, score, created_at, updated_at, intern_name)
+    - order: Sort order (asc, desc) - default: desc
+    
+    RBAC:
     - INTERN: Cannot see scores (only feedback)
-    - TECH_LEAD/ADMIN: Can see all fields including scores
+    - TECHNICAL_LEAD: Can only see evaluations for interns in their assigned batches
+    - ADMIN: Can see all evaluations
     """
     evaluations = evaluation_service.list_evaluations(
         db,
+        current_user=current_user,
         skip=skip,
         limit=limit,
         intern_id=intern_id,
@@ -198,6 +217,8 @@ def get_evaluations(
         batch_id=batch_id,
         sort_by=sort_by,
         order=order,
+        score_min=score_min,
+        score_max=score_max,
     )
     
     # Return different response based on role

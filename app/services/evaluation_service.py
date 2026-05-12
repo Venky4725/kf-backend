@@ -62,6 +62,7 @@ class EvaluationService(CRUDService[Evaluation]):
         self,
         db: Session,
         *,
+        current_user=None,
         skip: int = 0,
         limit: int = 100,
         intern_id: UUID | None = None,
@@ -71,12 +72,33 @@ class EvaluationService(CRUDService[Evaluation]):
         batch_id: UUID | None = None,
         sort_by: str | None = None,
         order: str | None = None,
+        score_min: float | None = None,
+        score_max: float | None = None,
     ) -> list[Evaluation]:
+        """
+        List evaluations with comprehensive filtering, searching, and sorting.
+        
+        RBAC Enforcement:
+        - ADMIN: Can see all evaluations
+        - TECHNICAL_LEAD: Can only see evaluations for interns in their assigned batches
+        - INTERN: Can see their own evaluations (handled at router level)
+        """
         from sqlalchemy import asc, desc
         
         try:
             # Start with base query - join with Profile for search on intern name
-            query = db.query(Evaluation).join(Profile, Evaluation.intern_id == Profile.id)
+            # Also join with Batch for TECHNICAL_LEAD filtering
+            query = db.query(Evaluation).join(
+                Profile, Evaluation.intern_id == Profile.id
+            ).outerjoin(
+                Batch, Profile.batch_id == Batch.id
+            )
+            
+            # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
+            if current_user and current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can only see evaluations for interns in their assigned batches
+                query = query.filter(Batch.team_lead_id == current_user.id)
+                logger.info(f"Tech Lead filter applied: team_lead_id={current_user.id}")
             
             # Filter by intern_id
             if intern_id:
@@ -86,13 +108,28 @@ class EvaluationService(CRUDService[Evaluation]):
             if reviewed_by:
                 query = query.filter(Evaluation.reviewed_by == reviewed_by)
             
-            # Filter by week_number (NEW)
+            # Filter by week_number
             if week_number is not None:
                 query = query.filter(Evaluation.week_number == week_number)
             
             # Filter by batch_id
             if batch_id:
                 query = query.filter(Profile.batch_id == batch_id)
+            
+            # Filter by score range
+            if score_min is not None:
+                # Validate score_min
+                if score_min < 0 or score_min > 5:
+                    logger.warning(f"Invalid score_min: {score_min}, ignoring filter")
+                else:
+                    query = query.filter(Evaluation.score >= score_min)
+            
+            if score_max is not None:
+                # Validate score_max
+                if score_max < 0 or score_max > 5:
+                    logger.warning(f"Invalid score_max: {score_max}, ignoring filter")
+                else:
+                    query = query.filter(Evaluation.score <= score_max)
             
             # Search across multiple fields (intern name and feedback)
             # IMPORTANT: Use LIKE '%search%' for partial matching
@@ -111,7 +148,7 @@ class EvaluationService(CRUDService[Evaluation]):
                     # Continue without search filter
             
             # Sorting
-            VALID_SORT_FIELDS = {"week_number", "score", "created_at"}
+            VALID_SORT_FIELDS = {"week_number", "score", "created_at", "updated_at", "intern_name"}
             if sort_by and sort_by in VALID_SORT_FIELDS:
                 try:
                     order_func = desc if order and order.lower() == "desc" else asc
@@ -121,6 +158,10 @@ class EvaluationService(CRUDService[Evaluation]):
                         query = query.order_by(order_func(Evaluation.score))
                     elif sort_by == "created_at":
                         query = query.order_by(order_func(Evaluation.created_at))
+                    elif sort_by == "updated_at":
+                        query = query.order_by(order_func(Evaluation.updated_at))
+                    elif sort_by == "intern_name":
+                        query = query.order_by(order_func(Profile.name))
                 except Exception as e:
                     logger.error(f"Error applying sort: {e}")
                     # Continue with default sorting
