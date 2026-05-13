@@ -158,7 +158,8 @@ class SubmissionService(CRUDService[Submission]):
                     detail="Cannot update submission for intern not in any batch"
                 )
             batch = db.get(Batch, intern.batch_id)
-            if batch.team_lead_id != current_user.id:
+            # Check if current user is either first or second tech lead
+            if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Tech Lead can only update submissions from their assigned batch"
@@ -195,7 +196,8 @@ class SubmissionService(CRUDService[Submission]):
                         detail="Cannot delete submission for intern not in any batch"
                     )
                 batch = db.get(Batch, intern.batch_id)
-                if batch.team_lead_id != current_user.id:
+                # Check if current user is either first or second tech lead
+                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only delete submissions from their assigned batch"

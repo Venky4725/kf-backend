@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.batch import Batch
@@ -17,8 +17,19 @@ class BatchService(CRUDService[Batch]):
     table_name = "batches"
 
     def create_batch(self, db: Session, payload: BatchCreate) -> Batch:
-        if payload.team_lead_id is not None:
-            self._ensure_team_lead(db, payload.team_lead_id)
+        # Validate first tech lead
+        if payload.first_tech_lead_id is not None:
+            self._ensure_tech_lead(db, payload.first_tech_lead_id, "first")
+        
+        # Validate second tech lead
+        if payload.second_tech_lead_id is not None:
+            self._ensure_tech_lead(db, payload.second_tech_lead_id, "second")
+        
+        # Ensure they are different (additional server-side check)
+        if (payload.first_tech_lead_id is not None and 
+            payload.second_tech_lead_id is not None and 
+            payload.first_tech_lead_id == payload.second_tech_lead_id):
+            raise ValidationError("First and second tech leads must be different.")
 
         return self.create(
             db,
@@ -26,7 +37,8 @@ class BatchService(CRUDService[Batch]):
                 "name": payload.name.strip(),
                 "tech_stack": payload.tech_stack.strip(),
                 "start_date": payload.start_date,
-                "team_lead_id": payload.team_lead_id,
+                "first_tech_lead_id": payload.first_tech_lead_id,
+                "second_tech_lead_id": payload.second_tech_lead_id,
             },
         )
 
@@ -36,29 +48,45 @@ class BatchService(CRUDService[Batch]):
         *,
         skip: int = 0,
         limit: int = 100,
-        team_lead_id: UUID | None = None,
+        tech_lead_id: UUID | None = None,
         search: str | None = None,
         sort_by: str | None = None,
         order: str | None = None,
     ) -> list[Batch]:
+        """
+        List batches with optional filtering by tech lead.
+        
+        If tech_lead_id is provided, returns batches where the tech lead is assigned
+        as either first_tech_lead_id OR second_tech_lead_id.
+        """
         from sqlalchemy import asc, desc
         
         query = db.query(Batch)
         
-        if team_lead_id:
-            # Find batches where:
-            # 1. team_lead_id matches (batch assigned TO the TL), OR
-            # 2. The TL's profile.batch_id matches the batch (TL belongs to the batch)
-            tl_profile = db.query(Profile).filter(Profile.id == team_lead_id).first()
+        if tech_lead_id:
+            # Find batches where tech lead is assigned as first OR second tech lead
+            tl_profile = db.query(Profile).filter(Profile.id == tech_lead_id).first()
             
             if tl_profile and tl_profile.batch_id:
-                # TL has a batch_id, so include both relationships
+                # TL has a batch_id, so include:
+                # 1. Batches where TL is first_tech_lead_id
+                # 2. Batches where TL is second_tech_lead_id
+                # 3. Batch that TL belongs to (profile.batch_id)
                 query = query.filter(
-                    (Batch.team_lead_id == team_lead_id) | (Batch.id == tl_profile.batch_id)
+                    or_(
+                        Batch.first_tech_lead_id == tech_lead_id,
+                        Batch.second_tech_lead_id == tech_lead_id,
+                        Batch.id == tl_profile.batch_id
+                    )
                 )
             else:
-                # TL has no batch_id, only check team_lead_id
-                query = query.filter(Batch.team_lead_id == team_lead_id)
+                # TL has no batch_id, check first_tech_lead_id OR second_tech_lead_id
+                query = query.filter(
+                    or_(
+                        Batch.first_tech_lead_id == tech_lead_id,
+                        Batch.second_tech_lead_id == tech_lead_id
+                    )
+                )
         
         # Search in name and tech_stack
         if search and search.strip():
@@ -88,12 +116,41 @@ class BatchService(CRUDService[Batch]):
 
     def update_batch(self, db: Session, batch_id: UUID, payload: BatchUpdate) -> Batch:
         updates = payload.model_dump(exclude_unset=True)
-        if "team_lead_id" in updates and updates["team_lead_id"] is not None:
-            self._ensure_team_lead(db, updates["team_lead_id"])
+        
+        # Validate first tech lead if being updated
+        if "first_tech_lead_id" in updates and updates["first_tech_lead_id"] is not None:
+            self._ensure_tech_lead(db, updates["first_tech_lead_id"], "first")
+        
+        # Validate second tech lead if being updated
+        if "second_tech_lead_id" in updates and updates["second_tech_lead_id"] is not None:
+            self._ensure_tech_lead(db, updates["second_tech_lead_id"], "second")
+        
+        # Ensure they are different (if both are being set)
+        first_tl = updates.get("first_tech_lead_id")
+        second_tl = updates.get("second_tech_lead_id")
+        
+        # If both are in the update and both are not None, check they're different
+        if (first_tl is not None and second_tl is not None and first_tl == second_tl):
+            raise ValidationError("First and second tech leads must be different.")
+        
+        # If only one is being updated, check against the existing value
+        if first_tl is not None and "second_tech_lead_id" not in updates:
+            # Check against existing second_tech_lead_id
+            batch = self.get(db, batch_id)
+            if batch.second_tech_lead_id is not None and first_tl == batch.second_tech_lead_id:
+                raise ValidationError("First and second tech leads must be different.")
+        
+        if second_tl is not None and "first_tech_lead_id" not in updates:
+            # Check against existing first_tech_lead_id
+            batch = self.get(db, batch_id)
+            if batch.first_tech_lead_id is not None and second_tl == batch.first_tech_lead_id:
+                raise ValidationError("First and second tech leads must be different.")
+        
         if "name" in updates and updates["name"] is not None:
             updates["name"] = updates["name"].strip()
         if "tech_stack" in updates and updates["tech_stack"] is not None:
             updates["tech_stack"] = updates["tech_stack"].strip()
+        
         return self.update(db, batch_id, updates)
 
     def delete(self, db: Session, batch_id: UUID) -> None:
@@ -105,7 +162,7 @@ class BatchService(CRUDService[Batch]):
         2. Unassign all tasks from the batch (set batch_id to NULL)
         3. Delete the batch record
         
-        This ensures clean deletion even if the assigned tech lead is deactivated.
+        This ensures clean deletion even if the assigned tech leads are deactivated.
         """
         import logging
         logger = logging.getLogger(__name__)
@@ -147,14 +204,24 @@ class BatchService(CRUDService[Batch]):
         
         logger.info(f"Successfully deleted batch: {batch.name} (unassigned {profile_count} profiles, {task_count} tasks)")
 
-    def _ensure_team_lead(self, db: Session, team_lead_id: UUID) -> None:
-        profile = db.get(Profile, team_lead_id)
+    def _ensure_tech_lead(self, db: Session, tech_lead_id: UUID, position: str = "") -> None:
+        """
+        Validate that a tech lead exists, has the correct role, and is active.
+        
+        Args:
+            db: Database session
+            tech_lead_id: UUID of the tech lead to validate
+            position: "first" or "second" for better error messages
+        """
+        profile = db.get(Profile, tech_lead_id)
+        position_str = f"{position} " if position else ""
+        
         if profile is None:
-            raise ConflictError(f"Profile '{team_lead_id}' does not exist.")
+            raise ConflictError(f"Profile '{tech_lead_id}' does not exist.")
         if profile.role != "TECHNICAL_LEAD":
-            raise ValidationError("Assigned team lead must have role TECHNICAL_LEAD.")
+            raise ValidationError(f"Assigned {position_str}tech lead must have role TECHNICAL_LEAD.")
         if not profile.is_active:
-            raise ValidationError("Cannot assign inactive tech lead to batch.")
+            raise ValidationError(f"Cannot assign inactive {position_str}tech lead to batch.")
 
 
 batch_service = BatchService()

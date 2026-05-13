@@ -250,7 +250,8 @@ async def upload_csv(
                         name=batch_name,
                         tech_stack="General",
                         start_date=datetime.utcnow().date(),
-                        team_lead_id=current_user.id if current_user.role == "TECHNICAL_LEAD" else None
+                        first_tech_lead_id=current_user.id if current_user.role == "TECHNICAL_LEAD" else None,
+                        second_tech_lead_id=None
                     )
                     db.add(batch)
                     db.commit()  # CRITICAL: Commit batch immediately

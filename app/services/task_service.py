@@ -34,7 +34,8 @@ class TaskService(CRUDService[Task]):
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="Batch not found"
                     )
-                if batch.team_lead_id != current_user.id:
+                # Check if current user is either first or second tech lead
+                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only create tasks for their assigned batches"
@@ -180,7 +181,8 @@ class TaskService(CRUDService[Task]):
             
             # Access control for Tech Lead
             if current_user.role == "TECHNICAL_LEAD":
-                if batch.team_lead_id != current_user.id:
+                # Check if current user is either first or second tech lead
+                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only update tasks in their assigned batches"
@@ -234,7 +236,8 @@ class TaskService(CRUDService[Task]):
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="Associated batch not found"
                     )
-                if batch.team_lead_id != current_user.id:
+                # Check if current user is either first or second tech lead
+                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only delete tasks in their assigned batches"

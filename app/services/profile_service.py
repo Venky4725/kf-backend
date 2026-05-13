@@ -2,6 +2,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 
 from app.core.security import hash_password
 from app.models.profile import Profile
@@ -68,7 +69,8 @@ class ProfileService(CRUDService[Profile]):
                         name=batch_name,
                         tech_stack="General",  # Default tech stack for auto-created batches
                         start_date=datetime.utcnow().date(),  # Set to current date
-                        team_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None
+                        first_tech_lead_id=current_user.id if current_user and current_user.role == "TECHNICAL_LEAD" else None,
+                        second_tech_lead_id=None
                     )
                     db.add(batch)
                     db.commit()  # CRITICAL: Commit batch immediately to ensure it persists
@@ -164,7 +166,10 @@ class ProfileService(CRUDService[Profile]):
                 # Tech Lead can only see interns in batches they lead
                 query = query.filter(
                     Profile.role == "INTERN",
-                    Batch.team_lead_id == current_user.id
+                    or_(
+                        Batch.first_tech_lead_id == current_user.id,
+                        Batch.second_tech_lead_id == current_user.id
+                    )
                 )
                 logger.info(f"Tech Lead filter applied: only interns in their batches")
                 
@@ -349,7 +354,12 @@ class ProfileService(CRUDService[Profile]):
         
         # Check if TL is assigned to batches
         if profile.role == "TECHNICAL_LEAD":
-            assigned_batches = db.query(Batch).filter(Batch.team_lead_id == profile_id).all()
+            assigned_batches = db.query(Batch).filter(
+                or_(
+                    Batch.first_tech_lead_id == profile_id,
+                    Batch.second_tech_lead_id == profile_id
+                )
+            ).all()
             if assigned_batches:
                 batch_names = [b.name for b in assigned_batches]
                 dependencies.append(f"assigned as Team Lead to {len(assigned_batches)} batch(es): {', '.join(batch_names)}")
@@ -395,8 +405,11 @@ class ProfileService(CRUDService[Profile]):
         
         # If TL has no dependencies, unassign from batches (safety check)
         if profile.role == "TECHNICAL_LEAD":
-            updated = db.query(Batch).filter(Batch.team_lead_id == profile_id).update({"team_lead_id": None})
-            logger.info(f"Unassigned TL from {updated} batches")
+            # Unassign from first_tech_lead_id
+            updated_first = db.query(Batch).filter(Batch.first_tech_lead_id == profile_id).update({"first_tech_lead_id": None})
+            # Unassign from second_tech_lead_id
+            updated_second = db.query(Batch).filter(Batch.second_tech_lead_id == profile_id).update({"second_tech_lead_id": None})
+            logger.info(f"Unassigned TL from {updated_first + updated_second} batches")
             db.flush()
         
         # Add audit log

@@ -17,10 +17,14 @@ class Batch(Base):
     tech_stack = Column(String, nullable=False)
     start_date = Column(Date, nullable=False)
 
-    team_lead_id = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)
+    # Two tech leads per batch
+    first_tech_lead_id = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)
+    second_tech_lead_id = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Relationship to Profile (bidirectional with back_populates)
+    # Relationships
     profiles = relationship("Profile", foreign_keys="[Profile.batch_id]", back_populates="batch", lazy="select")
+    first_tech_lead = relationship("Profile", foreign_keys=[first_tech_lead_id], lazy="joined")
+    second_tech_lead = relationship("Profile", foreign_keys=[second_tech_lead_id], lazy="joined")

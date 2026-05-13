@@ -2,6 +2,7 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.models.attendance import Attendance
 from app.schemas.attendance import AttendanceCreate, AttendanceUpdate
@@ -56,7 +57,10 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.team_lead_id == current_user.id
+                    or_(
+                        Batch.first_tech_lead_id == current_user.id,
+                        Batch.second_tech_lead_id == current_user.id
+                    )
                 ).first()
                 
                 if not batch:
@@ -191,12 +195,22 @@ class AttendanceService(CRUDService[Attendance]):
         
         # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            # Filter by batches where this Tech Lead is assigned
-            query = query.filter(Batch.team_lead_id == current_user.id)
-            logger.info(f"Tech Lead filter applied: team_lead_id={current_user.id}")
+            # Filter by batches where this Tech Lead is assigned (first or second)
+            query = query.filter(
+                or_(
+                    Batch.first_tech_lead_id == current_user.id,
+                    Batch.second_tech_lead_id == current_user.id
+                )
+            )
+            logger.info(f"Tech Lead filter applied: user_id={current_user.id}")
             
             # Debug: Log batches assigned to this Tech Lead
-            tech_lead_batches = db.query(Batch).filter(Batch.team_lead_id == current_user.id).all()
+            tech_lead_batches = db.query(Batch).filter(
+                or_(
+                    Batch.first_tech_lead_id == current_user.id,
+                    Batch.second_tech_lead_id == current_user.id
+                )
+            ).all()
             batch_ids = [str(b.id) for b in tech_lead_batches]
             logger.info(f"Tech Lead {current_user.id} leads batches: {batch_ids}")
             
@@ -316,7 +330,10 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.team_lead_id == current_user.id
+                    or_(
+                        Batch.first_tech_lead_id == current_user.id,
+                        Batch.second_tech_lead_id == current_user.id
+                    )
                 ).first()
                 
                 if not batch:
@@ -367,7 +384,10 @@ class AttendanceService(CRUDService[Attendance]):
                 from app.models.batch import Batch
                 batch = db.query(Batch).filter(
                     Batch.id == target_user.batch_id,
-                    Batch.team_lead_id == current_user.id
+                    or_(
+                        Batch.first_tech_lead_id == current_user.id,
+                        Batch.second_tech_lead_id == current_user.id
+                    )
                 ).first()
                 
                 if not batch:
