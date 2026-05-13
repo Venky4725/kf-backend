@@ -69,8 +69,12 @@ def get_attendance(
 def get_attendance_record(
     attendance_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    return attendance_service.get(db, attendance_id)
+    """
+    Get a single attendance record with enhanced profile and batch data.
+    """
+    return attendance_service.get_attendance(db, attendance_id)
 
 
 @router.post("", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
