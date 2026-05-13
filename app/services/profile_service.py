@@ -16,6 +16,23 @@ VALID_PROFILE_ROLES = {"ADMIN", "TECHNICAL_LEAD", "INTERN"}
 DEFAULT_PASSWORD = "Welcome@123"
 
 
+def is_tech_lead_for_batch(db: Session, user_id: UUID, batch_id: UUID) -> bool:
+    """
+    Check if a user is a tech lead for a specific batch.
+    
+    Uses the NEW architecture: checks if user has role=TECHNICAL_LEAD and batch_id matches.
+    This replaces the legacy first_tech_lead_id/second_tech_lead_id checks.
+    """
+    tech_lead = db.query(Profile).filter(
+        Profile.id == user_id,
+        Profile.role == "TECHNICAL_LEAD",
+        Profile.batch_id == batch_id,
+        Profile.is_active == True
+    ).first()
+    
+    return tech_lead is not None
+
+
 class ProfileService(CRUDService[Profile]):
     model = Profile
     resource_name = "Profile"
@@ -185,18 +202,19 @@ class ProfileService(CRUDService[Profile]):
             query = query.join(Batch, Profile.batch_id == Batch.id)
             logger.info("Batch table joined")
         
-        # Role-based access control
-        if current_user:
-            if current_user.role == "TECHNICAL_LEAD":
-                # Tech Lead can only see interns in batches they lead
+        # RBAC: Tech Lead can only see interns in batches they lead
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            # NEW ARCHITECTURE: Filter by interns whose batch_id matches tech lead's batch_id
+            if current_user.batch_id:
                 query = query.filter(
                     Profile.role == "INTERN",
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id
-                    )
+                    Profile.batch_id == current_user.batch_id
                 )
-                logger.info(f"Tech Lead filter applied: only interns in their batches")
+                logger.info(f"Tech Lead filter applied: only interns in batch {current_user.batch_id}")
+            else:
+                # Tech lead has no batch assigned, show no interns
+                query = query.filter(Profile.id == None)  # Returns empty result
+                logger.info("Tech Lead has no batch_id, showing no interns")
                 
             elif current_user.role == "INTERN":
                 # Interns can only see their own profile
@@ -351,7 +369,32 @@ class ProfileService(CRUDService[Profile]):
             updates["email"] = normalized_email
         
         logger.info(f"Calling base update with: {updates}")
-        updated_profile = self.update(db, profile_id, updates)
+        
+        try:
+            updated_profile = self.update(db, profile_id, updates)
+        except IntegrityError as e:
+            # Log the full error for debugging
+            logger.error(f"IntegrityError during profile update: {e}")
+            logger.error(f"Original error: {e.orig}")
+            db.rollback()
+            
+            # Parse the error to provide helpful message
+            error_msg = str(e.orig).lower() if hasattr(e, 'orig') else str(e).lower()
+            
+            if 'unique' in error_msg and 'email' in error_msg:
+                raise ConflictError(f"Email address is already in use by another profile.")
+            elif 'unique' in error_msg and 'batch' in error_msg:
+                raise ConflictError(f"This batch assignment conflicts with existing data.")
+            elif 'foreign key' in error_msg:
+                raise ConflictError(f"Referenced batch or resource does not exist.")
+            else:
+                # Generic integrity error
+                raise ConflictError(f"Database constraint violation: {error_msg}")
+        except Exception as e:
+            logger.error(f"Unexpected error during profile update: {e}", exc_info=True)
+            db.rollback()
+            raise
+        
         logger.info(f"Profile updated successfully: name={updated_profile.name}, email={updated_profile.email}, tech_stack={updated_profile.tech_stack}, batch_id={updated_profile.batch_id}")
         
         return updated_profile

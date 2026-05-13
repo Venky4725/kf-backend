@@ -35,17 +35,23 @@ class EvaluationService(CRUDService[Evaluation]):
         
         # Tech Lead can only create evaluations for interns in their assigned batches
         if current_user.role == "TECHNICAL_LEAD":
+            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
+            if current_user.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead is not assigned to any batch"
+                )
+            
             if intern.batch_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot evaluate intern not assigned to any batch"
                 )
-            batch = db.get(Batch, intern.batch_id)
-            # Check if current user is either first or second tech lead
-            if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
+            
+            if intern.batch_id != current_user.batch_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead can only evaluate interns in their assigned batches"
+                    detail="Tech Lead can only evaluate interns in their assigned batch"
                 )
 
         return self.create(
@@ -97,15 +103,14 @@ class EvaluationService(CRUDService[Evaluation]):
             
             # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                # Tech Lead can only see evaluations for interns in their assigned batches
-                # Check if user is first OR second tech lead
-                query = query.filter(
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id
-                    )
-                )
-                logger.info(f"Tech Lead filter applied: user_id={current_user.id}")
+                # NEW ARCHITECTURE: Tech Lead can only see evaluations for interns in their batch
+                if current_user.batch_id:
+                    query = query.filter(Profile.batch_id == current_user.batch_id)
+                    logger.info(f"Tech Lead filter applied: batch_id={current_user.batch_id}")
+                else:
+                    # Tech lead has no batch, show nothing
+                    query = query.filter(Profile.id == None)
+                    logger.info("Tech Lead has no batch_id, showing no evaluations")
             
             # Filter by intern_id
             if intern_id:
@@ -208,17 +213,24 @@ class EvaluationService(CRUDService[Evaluation]):
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Intern profile not found"
                 )
+            
+            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
+            if current_user.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead is not assigned to any batch"
+                )
+            
             if intern.batch_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot update evaluation for intern not in any batch"
                 )
-            batch = db.get(Batch, intern.batch_id)
-            # Check if current user is either first or second tech lead
-            if batch is None or (batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id):
+            
+            if intern.batch_id != current_user.batch_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead can only update evaluations in their assigned batches"
+                    detail="Tech Lead can only update evaluations in their assigned batch"
                 )
             
             # CRITICAL: Tech Lead cannot change intern_id or reviewed_by
@@ -276,17 +288,24 @@ class EvaluationService(CRUDService[Evaluation]):
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="Intern profile not found"
                     )
+                
+                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
+                if current_user.batch_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
                 if intern.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Cannot delete evaluation for intern not in any batch"
                     )
-                batch = db.get(Batch, intern.batch_id)
-                # Check if current user is either first or second tech lead
-                if batch is None or (batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id):
+                
+                if intern.batch_id != current_user.batch_id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete evaluations in their assigned batches"
+                        detail="Tech Lead can only delete evaluations in their assigned batch"
                     )
             elif current_user.role == "ADMIN":
                 # Admin can delete any evaluation
