@@ -215,11 +215,11 @@ class ProfileService(CRUDService[Profile]):
                 # Tech lead has no batch assigned, show no interns
                 query = query.filter(Profile.id == None)  # Returns empty result
                 logger.info("Tech Lead has no batch_id, showing no interns")
-                
-            elif current_user.role == "INTERN":
-                # Interns can only see their own profile
-                query = query.filter(Profile.id == current_user.id)
-                logger.info("Intern filter applied: own profile only")
+        
+        elif current_user and current_user.role == "INTERN":
+            # Interns can only see their own profile
+            query = query.filter(Profile.id == current_user.id)
+            logger.info("Intern filter applied: own profile only")
         
         # Apply is_active filter
         if is_active is not None:
