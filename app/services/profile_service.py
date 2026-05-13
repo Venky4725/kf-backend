@@ -31,7 +31,7 @@ class ProfileService(CRUDService[Profile]):
         if role not in VALID_PROFILE_ROLES:
             raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
         
-        # CONDITIONAL VALIDATION: batch required only for INTERN role
+        # Handle batch assignment based on role
         batch_id = None
         
         if role == "INTERN":
@@ -88,10 +88,47 @@ class ProfileService(CRUDService[Profile]):
                     status_code=400,
                     detail="Batch is required for INTERN role. Provide either batch_id or batch_name"
                 )
+        
+        elif role == "TECHNICAL_LEAD":
+            # TECHNICAL_LEAD can optionally have batch_id
+            if payload.batch_id:
+                logger.info(f"Creating TECHNICAL_LEAD with batch_id: {payload.batch_id}")
+                
+                # Validate batch exists
+                batch = db.query(Batch).filter(Batch.id == payload.batch_id).first()
+                if not batch:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Batch with id '{payload.batch_id}' does not exist"
+                    )
+                
+                # Check if batch already has 2 tech leads assigned
+                tech_leads_in_batch = db.query(Profile).filter(
+                    Profile.batch_id == payload.batch_id,
+                    Profile.role == "TECHNICAL_LEAD",
+                    Profile.is_active == True
+                ).count()
+                
+                if tech_leads_in_batch >= 2:
+                    from fastapi import HTTPException
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Batch '{batch.name}' already has maximum 2 tech leads assigned"
+                    )
+                
+                batch_id = payload.batch_id
+                logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
+            else:
+                logger.info(f"Creating TECHNICAL_LEAD without batch assignment")
+                batch_id = None
+        
         else:
-            # TECH_LEAD and ADMIN do not require batch
-            logger.info(f"Creating {role} without batch assignment")
+            # ADMIN does not require batch (and typically shouldn't have one)
+            if payload.batch_id:
+                logger.warning(f"ADMIN role should not have batch_id, ignoring provided value")
             batch_id = None
+            logger.info(f"Creating ADMIN without batch assignment")
 
         # Generate password hash for default password
         password_hash = hash_password(DEFAULT_PASSWORD)
@@ -293,6 +330,27 @@ class ProfileService(CRUDService[Profile]):
         if "batch_id" in updates and updates["batch_id"] is not None:
             logger.info(f"Validating batch_id: {updates['batch_id']}")
             self._ensure_batch_exists(db, updates["batch_id"])
+            
+            # If updating a TECHNICAL_LEAD's batch, check the 2-tech-lead limit
+            if existing_profile.role == "TECHNICAL_LEAD":
+                # Count existing tech leads in the target batch (excluding this profile)
+                tech_leads_in_batch = db.query(Profile).filter(
+                    Profile.batch_id == updates["batch_id"],
+                    Profile.role == "TECHNICAL_LEAD",
+                    Profile.is_active == True,
+                    Profile.id != profile_id  # Exclude current profile
+                ).count()
+                
+                if tech_leads_in_batch >= 2:
+                    from fastapi import HTTPException, status as http_status
+                    from app.models.batch import Batch
+                    batch = db.get(Batch, updates["batch_id"])
+                    raise HTTPException(
+                        status_code=http_status.HTTP_409_CONFLICT,
+                        detail=f"Batch '{batch.name}' already has maximum 2 tech leads assigned"
+                    )
+                
+                logger.info(f"Tech lead batch assignment validated: {tech_leads_in_batch} existing tech leads in batch")
         
         # Normalize name if being updated
         if "name" in updates and updates["name"] is not None:
