@@ -86,6 +86,19 @@ app.add_middleware(
 def health():
     return {"status": "ok"}
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"422 Unprocessable Entity: {exc.errors()}")
+    logger.error(f"Body: {await request.body()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(await request.body())},
+    )
+
 for router in (
     auth.router,
     profiles.router,

@@ -1,8 +1,9 @@
 # app/schemas/notification.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from uuid import UUID
 from datetime import datetime
+from typing import Any
 
 
 class NotificationCreate(BaseModel):
@@ -19,7 +20,17 @@ class NotificationBroadcast(BaseModel):
 
 
 class NotificationUpdate(BaseModel):
-    is_read: bool
+    title: str | None = None
+    message: str | None = None
+    is_read: bool | None = None
+    type: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_nested_notification(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "notification" in data:
+            return data["notification"]
+        return data
 
 
 class NotificationResponse(BaseModel):

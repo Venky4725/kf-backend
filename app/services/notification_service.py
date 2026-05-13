@@ -203,17 +203,28 @@ class NotificationService(CRUDService[Notification]):
         current_user=None,
     ) -> Notification:
         try:
-            # Check access - user can only update their own notifications
+            notification = self.get(db, notification_id)
+            
+            # Check access - user can update if they are the receiver OR the sender OR an admin
             if current_user:
-                notification = self.get(db, notification_id)
-                if notification.user_id != current_user.id:
+                is_receiver = notification.user_id == current_user.id
+                is_sender = hasattr(notification, 'sender_id') and notification.sender_id == current_user.id
+                is_admin = getattr(current_user, 'role', None) == "ADMIN"
+                
+                if not (is_receiver or is_sender or is_admin):
                     from fastapi import HTTPException, status as http_status
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
-                        detail="You can only update your own notifications"
+                        detail="You do not have permission to update this notification"
                     )
             
-            return self.update(db, notification_id, {"is_read": payload.is_read})
+            # Extract data to update, excluding unset values for partial update
+            update_data = payload.model_dump(exclude_unset=True)
+            
+            if not update_data:
+                return notification
+                
+            return self.update(db, notification_id, update_data)
         except Exception as e:
             logger.error(f"Error updating notification: {e}")
             raise
