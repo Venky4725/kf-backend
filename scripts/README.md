@@ -4,7 +4,122 @@ This directory contains scripts for managing attendance database migrations and 
 
 ## Scripts Overview
 
-### 1. `clean_duplicate_attendance.py`
+### 1. `check_attendance_schema.py` ⭐ NEW
+Diagnostic tool to check the current attendance table schema and enum status.
+
+**Purpose:**
+- Checks if attendance table exists
+- Shows all column definitions
+- Checks if attendance_status enum exists
+- Shows current enum values
+- Identifies if LATE status is missing
+- Shows sample attendance records
+
+**Usage:**
+```bash
+python scripts/check_attendance_schema.py
+```
+
+**When to run:**
+- Before running migrations
+- When diagnosing enum-related errors
+- To verify database schema
+
+**Output:**
+```
+============================================================
+ATTENDANCE SCHEMA DIAGNOSTIC
+============================================================
+
+1. Checking if attendance table exists...
+✅ Attendance table exists
+
+2. Attendance table columns:
+   - id: UUID (nullable=False)
+   - user_id: UUID (nullable=False)
+   - day: DATE (nullable=False)
+   - status: VARCHAR (nullable=False)
+   - created_at: TIMESTAMP (nullable=True)
+
+3. Checking for attendance_status enum type...
+✅ attendance_status enum type exists
+   Enum values: PRESENT, ABSENT, LEAVE
+   ⚠️  LATE is MISSING - this is the problem!
+
+4. Checking attendance.status column type...
+   Column: status
+   Data type: USER-DEFINED
+   UDT name: attendance_status
+   
+   ⚠️  Column is using attendance_status ENUM type
+   This means the enum MUST include LATE value
+   
+   ACTION REQUIRED:
+   Run: python scripts/add_late_status_to_enum.py
+```
+
+---
+
+### 2. `add_late_status_to_enum.py` ⭐ NEW
+Adds 'LATE' status to the attendance_status enum type.
+
+**Purpose:**
+- Fixes the production error: `invalid input value for enum attendance_status: "LATE"`
+- Checks if attendance_status enum exists
+- Adds LATE value to the enum if missing
+- Creates the enum if it doesn't exist
+- Verifies the migration
+
+**Usage:**
+```bash
+python scripts/add_late_status_to_enum.py
+```
+
+**When to run:**
+- When you get enum validation errors for LATE status
+- After running `check_attendance_schema.py` and confirming LATE is missing
+- Before deploying code that uses LATE status
+
+**Output:**
+```
+============================================================
+ATTENDANCE STATUS ENUM MIGRATION
+============================================================
+
+Step 1: Checking if attendance_status enum exists...
+✅ attendance_status enum exists
+
+Step 2: Checking current enum values...
+Current values: PRESENT, ABSENT, LEAVE
+
+Step 3: Adding LATE value to enum...
+✅ Successfully added LATE to attendance_status enum
+
+Step 4: Verifying migration...
+Updated values: PRESENT, ABSENT, LEAVE, LATE
+
+============================================================
+✅ MIGRATION COMPLETED SUCCESSFULLY!
+============================================================
+
+The attendance_status enum now includes:
+  - PRESENT
+  - ABSENT
+  - LEAVE
+  - LATE
+
+You can now create attendance records with status='LATE'
+```
+
+**Safety:**
+- Idempotent: Safe to run multiple times
+- Uses `ADD VALUE IF NOT EXISTS` (PostgreSQL 9.1+)
+- Creates enum if it doesn't exist
+- Verifies changes after migration
+
+---
+
+### 3. `clean_duplicate_attendance.py`
 Removes duplicate attendance records before adding the unique constraint.
 
 **Purpose:**
@@ -28,7 +143,7 @@ python scripts/clean_duplicate_attendance.py
 
 ---
 
-### 2. `add_attendance_unique_constraint.py`
+### 4. `add_attendance_unique_constraint.py`
 Adds a unique constraint to the attendance table to prevent future duplicates.
 
 **Purpose:**
@@ -57,7 +172,7 @@ python scripts/add_attendance_unique_constraint.py
 
 ---
 
-### 3. `test_attendance_endpoints.py`
+### 5. `test_attendance_endpoints.py`
 Comprehensive test suite for all attendance endpoints and features.
 
 **Purpose:**
@@ -120,7 +235,55 @@ python scripts/test_attendance_endpoints.py
 
 ## Migration Workflow
 
-### Step 1: Clean Duplicates
+### Critical Fix: Add LATE Status to Enum
+
+If you're experiencing the error: `invalid input value for enum attendance_status: "LATE"`
+
+#### Step 1: Diagnose the Issue
+```bash
+python scripts/check_attendance_schema.py
+```
+
+This will show you:
+- Current enum values
+- Whether LATE is missing
+- Column type information
+
+#### Step 2: Fix the Enum
+```bash
+python scripts/add_late_status_to_enum.py
+```
+
+This will:
+- Add LATE to the attendance_status enum
+- Verify the change
+- Show updated enum values
+
+#### Step 3: Restart Application
+```bash
+# Restart your FastAPI application to pick up changes
+```
+
+#### Step 4: Test
+```bash
+python scripts/test_attendance_endpoints.py
+```
+
+---
+
+## Full Migration Workflow (New Setup)
+
+### Step 1: Check Schema
+```bash
+python scripts/check_attendance_schema.py
+```
+
+### Step 2: Fix Enum (if needed)
+```bash
+python scripts/add_late_status_to_enum.py
+```
+
+### Step 3: Clean Duplicates
 ```bash
 python scripts/clean_duplicate_attendance.py
 ```
@@ -150,7 +313,7 @@ Next step: Run the migration script to add unique constraint
   python scripts/add_attendance_unique_constraint.py
 ```
 
-### Step 2: Add Unique Constraint
+### Step 4: Add Unique Constraint
 ```bash
 python scripts/add_attendance_unique_constraint.py
 ```
@@ -177,7 +340,7 @@ Constraint details:
 ============================================================
 ```
 
-### Step 3: Test Everything
+### Step 5: Test Everything
 ```bash
 python scripts/test_attendance_endpoints.py
 ```

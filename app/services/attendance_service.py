@@ -24,6 +24,7 @@ class AttendanceService(CRUDService[Attendance]):
         from app.models.profile import Profile
         from app.models.batch import Batch
         from sqlalchemy.orm import joinedload
+        from sqlalchemy.exc import DataError, IntegrityError
         
         logger = logging.getLogger(__name__)
         
@@ -106,15 +107,48 @@ class AttendanceService(CRUDService[Attendance]):
             return self._enhance_attendance_response(existing)
 
         # Create new attendance record
-        logger.info(f"Creating new attendance for user {payload.user_id} on {day_value}")
-        new_attendance = self.create(
-            db,
-            {
-                "user_id": payload.user_id,
-                "day": day_value,
-                "status": status_value,
-            },
-        )
+        logger.info(f"Creating new attendance for user {payload.user_id} on {day_value} with status {status_value}")
+        
+        try:
+            new_attendance = self.create(
+                db,
+                {
+                    "user_id": payload.user_id,
+                    "day": day_value,
+                    "status": status_value,
+                },
+            )
+        except DataError as e:
+            # Handle enum constraint violation
+            logger.error(f"DataError creating attendance: {e}")
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+            
+            if 'attendance_status' in error_msg and 'enum' in error_msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid attendance status '{status_value}'. Database enum needs migration. Valid values: PRESENT, ABSENT, LEAVE, LATE. Please contact administrator."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid data for attendance creation: {error_msg}"
+                )
+        except IntegrityError as e:
+            # Handle other integrity errors
+            logger.error(f"IntegrityError creating attendance: {e}")
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attendance record already exists for this user and date"
+            )
+        except Exception as e:
+            # Handle unexpected errors
+            logger.error(f"Unexpected error creating attendance: {e}", exc_info=True)
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create attendance record. Please try again or contact administrator."
+            )
         
         # Re-query with joinedload to ensure relationships are loaded
         new_attendance = db.query(Attendance).options(
@@ -232,6 +266,7 @@ class AttendanceService(CRUDService[Attendance]):
         from app.models.profile import Profile
         from app.models.batch import Batch
         from sqlalchemy.orm import joinedload
+        from sqlalchemy.exc import DataError
         
         logger = logging.getLogger(__name__)
         
@@ -280,7 +315,31 @@ class AttendanceService(CRUDService[Attendance]):
                 )
         
         # Update the attendance
-        updated = self.update(db, attendance_id, {"status": payload.status})
+        try:
+            updated = self.update(db, attendance_id, {"status": payload.status})
+        except DataError as e:
+            # Handle enum constraint violation
+            logger.error(f"DataError updating attendance: {e}")
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+            
+            if 'attendance_status' in error_msg and 'enum' in error_msg.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid attendance status '{payload.status}'. Database enum needs migration. Valid values: PRESENT, ABSENT, LEAVE, LATE. Please contact administrator."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid data for attendance update: {error_msg}"
+                )
+        except Exception as e:
+            # Handle unexpected errors
+            logger.error(f"Unexpected error updating attendance: {e}", exc_info=True)
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update attendance record. Please try again or contact administrator."
+            )
         
         # Re-query with joinedload to ensure relationships are loaded
         updated = db.query(Attendance).options(
