@@ -8,10 +8,117 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.schemas.attendance import AttendanceCreate, AttendanceResponse, AttendanceUpdate
+from app.schemas.attendance import (
+    AttendanceCreate, 
+    AttendanceResponse, 
+    AttendanceUpdate,
+    AttendanceDistribution,
+    InternAttendanceAnalytics,
+    PendingAttendanceIntern
+)
 from app.services.attendance_service import attendance_service
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
+
+
+@router.get("/analytics/distribution", response_model=AttendanceDistribution)
+def get_attendance_distribution(
+    batch_id: UUID | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Get attendance distribution (counts by status) for analytics/dashboard.
+    Returns data suitable for pie charts.
+    
+    Query params:
+    - batch_id: Filter by specific batch
+    - start_date: Start date for date range
+    - end_date: End date for date range
+    
+    RBAC:
+    - ADMIN: All attendance
+    - TECHNICAL_LEAD: Only their batches
+    """
+    return attendance_service.get_attendance_distribution(
+        db,
+        batch_id=batch_id,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user
+    )
+
+
+@router.get("/analytics/intern/{intern_id}", response_model=InternAttendanceAnalytics)
+def get_intern_attendance_analytics(
+    intern_id: UUID,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Get individual intern attendance analytics.
+    
+    Returns:
+    - Attendance counts by status
+    - Attendance percentage
+    - Trend data for charts
+    
+    RBAC:
+    - ADMIN: Any intern
+    - TECHNICAL_LEAD: Only interns in their batches
+    - INTERN: Only their own data
+    """
+    # Interns can only see their own analytics
+    if current_user.role == "INTERN" and current_user.id != intern_id:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Interns can only view their own attendance analytics"
+        )
+    
+    return attendance_service.get_intern_attendance_analytics(
+        db,
+        intern_id,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user
+    )
+
+
+@router.get("/pending", response_model=list[PendingAttendanceIntern])
+def get_pending_attendance_interns(
+    attendance_date: date,
+    batch_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Get list of interns for attendance marking.
+    Shows which interns already have attendance marked for the specified date.
+    
+    Query params:
+    - attendance_date: Date to check attendance for (required)
+    - batch_id: Filter by specific batch
+    
+    Returns:
+    - List of interns with has_attendance flag
+    - Interns with has_attendance=true already have attendance for the date
+    - Interns with has_attendance=false need attendance marking
+    
+    RBAC:
+    - ADMIN: All interns
+    - TECHNICAL_LEAD: Only interns in their batches
+    """
+    return attendance_service.get_pending_attendance_interns(
+        db,
+        attendance_date=attendance_date,
+        batch_id=batch_id,
+        current_user=current_user
+    )
 
 
 @router.get("", response_model=list[AttendanceResponse])

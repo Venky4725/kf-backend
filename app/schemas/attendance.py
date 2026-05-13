@@ -107,3 +107,81 @@ class AttendanceDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Analytics schemas
+class AttendanceDistribution(BaseModel):
+    """Attendance distribution for pie charts"""
+    present_count: int = 0
+    absent_count: int = 0
+    late_count: int = 0
+    leave_count: int = 0
+    total_count: int = 0
+    
+    # Percentages
+    present_percentage: float = 0.0
+    absent_percentage: float = 0.0
+    late_percentage: float = 0.0
+    leave_percentage: float = 0.0
+
+
+class AttendanceTrend(BaseModel):
+    """Daily attendance trend"""
+    date: DateType
+    present: int = 0
+    absent: int = 0
+    late: int = 0
+    leave: int = 0
+    total: int = 0
+
+
+class InternAttendanceAnalytics(BaseModel):
+    """Individual intern attendance analytics"""
+    intern_id: UUID
+    intern_name: str
+    batch_id: UUID | None = None
+    batch_name: str | None = None
+    
+    # Counts
+    present_count: int = 0
+    absent_count: int = 0
+    late_count: int = 0
+    leave_count: int = 0
+    total_days: int = 0
+    
+    # Percentage
+    attendance_percentage: float = 0.0
+    
+    # Trend data
+    trend: list[AttendanceTrend] = []
+
+
+class BatchAttendanceAnalytics(BaseModel):
+    """Batch-level attendance analytics"""
+    batch_id: UUID
+    batch_name: str
+    
+    # Distribution
+    distribution: AttendanceDistribution
+    
+    # Trend
+    trend: list[AttendanceTrend] = []
+    
+    # Top performers
+    top_performers: list[dict] = []
+    
+    # Needs attention
+    needs_attention: list[dict] = []
+
+
+class PendingAttendanceIntern(BaseModel):
+    """Intern pending attendance marking"""
+    id: UUID
+    name: str
+    email: str
+    batch_id: UUID | None = None
+    batch_name: str | None = None
+    has_attendance: bool = False
+    
+    class Config:
+        from_attributes = True

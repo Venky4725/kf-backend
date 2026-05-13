@@ -408,6 +408,280 @@ class AttendanceService(CRUDService[Attendance]):
             logger.warning(f"Profile not loaded for attendance {attendance.id}")
         
         return attendance
+    
+    def get_attendance_distribution(
+        self,
+        db: Session,
+        *,
+        batch_id: UUID | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        current_user=None
+    ) -> dict:
+        """
+        Get attendance distribution (counts by status) for analytics.
+        Returns data suitable for pie charts.
+        """
+        import logging
+        from sqlalchemy import func
+        from app.models.profile import Profile
+        from app.models.batch import Batch
+        
+        logger = logging.getLogger(__name__)
+        
+        # Base query
+        query = db.query(
+            Attendance.status,
+            func.count(Attendance.id).label('count')
+        ).join(Profile, Attendance.user_id == Profile.id)
+        
+        # RBAC: Tech Lead can only see their batches
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            query = query.join(Batch, Profile.batch_id == Batch.id).filter(
+                or_(
+                    Batch.first_tech_lead_id == current_user.id,
+                    Batch.second_tech_lead_id == current_user.id
+                )
+            )
+        
+        # Filter by batch
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+        
+        # Filter by date range
+        if start_date:
+            query = query.filter(Attendance.day >= start_date)
+        if end_date:
+            query = query.filter(Attendance.day <= end_date)
+        
+        # Group by status
+        query = query.group_by(Attendance.status)
+        
+        # Execute query
+        results = query.all()
+        
+        # Initialize counts
+        distribution = {
+            'present_count': 0,
+            'absent_count': 0,
+            'late_count': 0,
+            'leave_count': 0,
+            'total_count': 0
+        }
+        
+        # Populate counts
+        for status, count in results:
+            status_lower = status.lower()
+            if status_lower == 'present':
+                distribution['present_count'] = count
+            elif status_lower == 'absent':
+                distribution['absent_count'] = count
+            elif status_lower == 'late':
+                distribution['late_count'] = count
+            elif status_lower == 'leave':
+                distribution['leave_count'] = count
+            distribution['total_count'] += count
+        
+        # Calculate percentages
+        total = distribution['total_count']
+        if total > 0:
+            distribution['present_percentage'] = round((distribution['present_count'] / total) * 100, 2)
+            distribution['absent_percentage'] = round((distribution['absent_count'] / total) * 100, 2)
+            distribution['late_percentage'] = round((distribution['late_count'] / total) * 100, 2)
+            distribution['leave_percentage'] = round((distribution['leave_count'] / total) * 100, 2)
+        else:
+            distribution['present_percentage'] = 0.0
+            distribution['absent_percentage'] = 0.0
+            distribution['late_percentage'] = 0.0
+            distribution['leave_percentage'] = 0.0
+        
+        return distribution
+    
+    def get_intern_attendance_analytics(
+        self,
+        db: Session,
+        intern_id: UUID,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        current_user=None
+    ) -> dict:
+        """
+        Get individual intern attendance analytics.
+        """
+        import logging
+        from sqlalchemy import func
+        from sqlalchemy.orm import joinedload
+        from app.models.profile import Profile
+        from app.models.batch import Batch
+        from fastapi import HTTPException, status
+        
+        logger = logging.getLogger(__name__)
+        
+        # Get intern profile
+        intern = db.query(Profile).options(
+            joinedload(Profile.batch)
+        ).filter(Profile.id == intern_id).first()
+        
+        if not intern:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Intern not found"
+            )
+        
+        # RBAC: Tech Lead can only see interns in their batches
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            if intern.batch_id:
+                batch = db.get(Batch, intern.batch_id)
+                if batch and (batch.first_tech_lead_id != current_user.id and 
+                             batch.second_tech_lead_id != current_user.id):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only view analytics for interns in their batches"
+                    )
+        
+        # Base query for counts
+        query = db.query(
+            Attendance.status,
+            func.count(Attendance.id).label('count')
+        ).filter(Attendance.user_id == intern_id)
+        
+        # Filter by date range
+        if start_date:
+            query = query.filter(Attendance.day >= start_date)
+        if end_date:
+            query = query.filter(Attendance.day <= end_date)
+        
+        # Group by status
+        results = query.group_by(Attendance.status).all()
+        
+        # Initialize counts
+        analytics = {
+            'intern_id': intern_id,
+            'intern_name': intern.name,
+            'batch_id': intern.batch_id,
+            'batch_name': intern.batch.name if intern.batch else None,
+            'present_count': 0,
+            'absent_count': 0,
+            'late_count': 0,
+            'leave_count': 0,
+            'total_days': 0,
+            'attendance_percentage': 0.0,
+            'trend': []
+        }
+        
+        # Populate counts
+        for status, count in results:
+            status_lower = status.lower()
+            if status_lower == 'present':
+                analytics['present_count'] = count
+            elif status_lower == 'absent':
+                analytics['absent_count'] = count
+            elif status_lower == 'late':
+                analytics['late_count'] = count
+            elif status_lower == 'leave':
+                analytics['leave_count'] = count
+            analytics['total_days'] += count
+        
+        # Calculate attendance percentage (present + late / total)
+        total = analytics['total_days']
+        if total > 0:
+            attended = analytics['present_count'] + analytics['late_count']
+            analytics['attendance_percentage'] = round((attended / total) * 100, 2)
+        
+        # Get trend data (last 30 days or date range)
+        trend_query = db.query(
+            Attendance.day,
+            Attendance.status,
+            func.count(Attendance.id).label('count')
+        ).filter(Attendance.user_id == intern_id)
+        
+        if start_date:
+            trend_query = trend_query.filter(Attendance.day >= start_date)
+        if end_date:
+            trend_query = trend_query.filter(Attendance.day <= end_date)
+        
+        trend_results = trend_query.group_by(Attendance.day, Attendance.status).order_by(Attendance.day).all()
+        
+        # Group trend by date
+        trend_by_date = {}
+        for day, status, count in trend_results:
+            if day not in trend_by_date:
+                trend_by_date[day] = {
+                    'date': day.isoformat(),
+                    'present': 0,
+                    'absent': 0,
+                    'late': 0,
+                    'leave': 0,
+                    'total': 0
+                }
+            status_lower = status.lower()
+            trend_by_date[day][status_lower] = count
+            trend_by_date[day]['total'] += count
+        
+        analytics['trend'] = list(trend_by_date.values())
+        
+        return analytics
+    
+    def get_pending_attendance_interns(
+        self,
+        db: Session,
+        *,
+        attendance_date: date,
+        batch_id: UUID | None = None,
+        current_user=None
+    ) -> list:
+        """
+        Get list of interns who don't have attendance marked for the specified date.
+        This is used for the attendance marking interface.
+        """
+        import logging
+        from sqlalchemy.orm import joinedload
+        from app.models.profile import Profile
+        from app.models.batch import Batch
+        
+        logger = logging.getLogger(__name__)
+        
+        # Get all interns
+        query = db.query(Profile).filter(Profile.role == "INTERN").options(
+            joinedload(Profile.batch)
+        )
+        
+        # RBAC: Tech Lead can only see interns in their batches
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            query = query.join(Batch, Profile.batch_id == Batch.id).filter(
+                or_(
+                    Batch.first_tech_lead_id == current_user.id,
+                    Batch.second_tech_lead_id == current_user.id
+                )
+            )
+        
+        # Filter by batch if specified
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+        
+        interns = query.all()
+        
+        # Get existing attendance for the date
+        existing_attendance = db.query(Attendance.user_id).filter(
+            Attendance.day == attendance_date
+        ).all()
+        existing_user_ids = {user_id for (user_id,) in existing_attendance}
+        
+        # Filter out interns who already have attendance
+        pending_interns = []
+        for intern in interns:
+            has_attendance = intern.id in existing_user_ids
+            pending_interns.append({
+                'id': intern.id,
+                'name': intern.name,
+                'email': intern.email,
+                'batch_id': intern.batch_id,
+                'batch_name': intern.batch.name if intern.batch else None,
+                'has_attendance': has_attendance
+            })
+        
+        return pending_interns
 
 
 attendance_service = AttendanceService()

@@ -1,6 +1,6 @@
 # app/models/attendance.py
 
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -22,3 +22,8 @@ class Attendance(Base):
     
     # Relationship to Profile
     profile = relationship("Profile", foreign_keys=[user_id], lazy="joined")
+    
+    # Unique constraint: one attendance per user per day
+    __table_args__ = (
+        UniqueConstraint('user_id', 'day', name='uq_attendance_user_day'),
+    )
