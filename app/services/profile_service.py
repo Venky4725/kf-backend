@@ -103,21 +103,9 @@ class ProfileService(CRUDService[Profile]):
                         detail=f"Batch with id '{payload.batch_id}' does not exist"
                     )
                 
-                # Check if batch already has 2 tech leads assigned
-                tech_leads_in_batch = db.query(Profile).filter(
-                    Profile.batch_id == payload.batch_id,
-                    Profile.role == "TECHNICAL_LEAD",
-                    Profile.is_active == True
-                ).count()
-                
-                if tech_leads_in_batch >= 2:
-                    from fastapi import HTTPException
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"Batch '{batch.name}' already has maximum 2 tech leads assigned"
-                    )
-                
+                # Allow multiple tech leads per batch (no limit)
                 batch_id = payload.batch_id
+                logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
                 logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
             else:
                 logger.info(f"Creating TECHNICAL_LEAD without batch assignment")
@@ -330,27 +318,7 @@ class ProfileService(CRUDService[Profile]):
         if "batch_id" in updates and updates["batch_id"] is not None:
             logger.info(f"Validating batch_id: {updates['batch_id']}")
             self._ensure_batch_exists(db, updates["batch_id"])
-            
-            # If updating a TECHNICAL_LEAD's batch, check the 2-tech-lead limit
-            if existing_profile.role == "TECHNICAL_LEAD":
-                # Count existing tech leads in the target batch (excluding this profile)
-                tech_leads_in_batch = db.query(Profile).filter(
-                    Profile.batch_id == updates["batch_id"],
-                    Profile.role == "TECHNICAL_LEAD",
-                    Profile.is_active == True,
-                    Profile.id != profile_id  # Exclude current profile
-                ).count()
-                
-                if tech_leads_in_batch >= 2:
-                    from fastapi import HTTPException, status as http_status
-                    from app.models.batch import Batch
-                    batch = db.get(Batch, updates["batch_id"])
-                    raise HTTPException(
-                        status_code=http_status.HTTP_409_CONFLICT,
-                        detail=f"Batch '{batch.name}' already has maximum 2 tech leads assigned"
-                    )
-                
-                logger.info(f"Tech lead batch assignment validated: {tech_leads_in_batch} existing tech leads in batch")
+            logger.info(f"Batch validation passed for batch_id: {updates['batch_id']}")
         
         # Normalize name if being updated
         if "name" in updates and updates["name"] is not None:

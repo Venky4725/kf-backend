@@ -6,7 +6,7 @@ This script:
 1. Finds tech leads who are assigned to batches (first_tech_lead_id or second_tech_lead_id)
    but don't have their profile.batch_id set
 2. Updates their profile.batch_id to match their batch assignment
-3. Validates the 2-tech-lead-per-batch limit
+3. Shows summary of tech lead assignments (supports multiple tech leads per batch)
 """
 
 import sys
@@ -96,15 +96,15 @@ def find_mismatched_tech_leads(db: Session):
     return issues
 
 
-def check_tech_lead_limits(db: Session):
-    """Check if any batch has more than 2 tech leads."""
+def check_tech_lead_distribution(db: Session):
+    """Check tech lead distribution across batches."""
     logger.info("=" * 60)
-    logger.info("CHECKING TECH LEAD LIMITS")
+    logger.info("CHECKING TECH LEAD DISTRIBUTION")
     logger.info("=" * 60)
     logger.info("")
     
     batches = db.query(Batch).all()
-    violations = []
+    stats = []
     
     for batch in batches:
         # Count tech leads assigned via profile.batch_id
@@ -114,22 +114,16 @@ def check_tech_lead_limits(db: Session):
             Profile.is_active == True
         ).count()
         
-        if tl_count > 2:
-            logger.error(f"❌ Batch '{batch.name}' has {tl_count} tech leads (max 2)")
-            violations.append({
+        if tl_count > 0:
+            logger.info(f"Batch '{batch.name}' has {tl_count} tech lead(s)")
+            stats.append({
                 'batch_id': batch.id,
                 'batch_name': batch.name,
                 'tech_lead_count': tl_count
             })
-        elif tl_count == 2:
-            logger.info(f"✅ Batch '{batch.name}' has {tl_count} tech leads (OK)")
-        elif tl_count == 1:
-            logger.info(f"ℹ️  Batch '{batch.name}' has {tl_count} tech lead")
-        else:
-            logger.info(f"ℹ️  Batch '{batch.name}' has no tech leads")
     
     logger.info("")
-    return violations
+    return stats
 
 
 def fix_tech_lead_assignments(db: Session, issues: list):
@@ -233,18 +227,8 @@ def main():
         # Find issues
         issues = find_mismatched_tech_leads(db)
         
-        # Check limits
-        violations = check_tech_lead_limits(db)
-        
-        if violations:
-            logger.error("=" * 60)
-            logger.error("❌ TECH LEAD LIMIT VIOLATIONS FOUND")
-            logger.error("=" * 60)
-            logger.error("")
-            logger.error("Some batches have more than 2 tech leads!")
-            logger.error("Please manually resolve these before proceeding.")
-            logger.error("")
-            return 1
+        # Check distribution
+        stats = check_tech_lead_distribution(db)
         
         # Fix issues
         if issues:
