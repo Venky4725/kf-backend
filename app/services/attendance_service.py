@@ -50,25 +50,23 @@ class AttendanceService(CRUDService[Attendance]):
                         detail="Tech Lead can only mark attendance for interns"
                     )
                 
-                # Check if intern is in a batch led by this Tech Lead
+                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
                 if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Intern is not assigned to any batch"
                     )
                 
-                batch = db.query(Batch).filter(
-                    Batch.id == target_user.batch_id,
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id
-                    )
-                ).first()
-                
-                if not batch:
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only mark attendance for interns in batches they lead"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only mark attendance for interns in their batch"
                     )
             
             # INTERN cannot create attendance
@@ -197,16 +195,16 @@ class AttendanceService(CRUDService[Attendance]):
             joinedload(Attendance.profile).joinedload(Profile.batch)
         )
         
-        # CRITICAL: Tech Lead can only see attendance for interns in batches they lead
+        # RBAC: Tech Lead can only see their batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            # Filter by batches where this Tech Lead is assigned (first or second)
-            query = query.filter(
-                or_(
-                    Batch.first_tech_lead_id == current_user.id,
-                    Batch.second_tech_lead_id == current_user.id
-                )
-            )
-            logger.info(f"Tech Lead filter applied: user_id={current_user.id}")
+            # NEW ARCHITECTURE: Filter by tech lead's batch_id
+            if current_user.batch_id:
+                query = query.filter(Profile.batch_id == current_user.batch_id)
+                logger.info(f"Tech Lead filter applied: batch_id={current_user.batch_id}")
+            else:
+                # Tech lead has no batch, show nothing
+                query = query.filter(Profile.id == None)
+                logger.info("Tech Lead has no batch_id, showing no attendance")
         
         # Filter by user_id
         if user_id:
@@ -286,25 +284,23 @@ class AttendanceService(CRUDService[Attendance]):
             
             # TECH_LEAD can only update attendance for interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
-                # Check if intern is in a batch led by this Tech Lead
+                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
                 if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Intern is not assigned to any batch"
                     )
                 
-                batch = db.query(Batch).filter(
-                    Batch.id == target_user.batch_id,
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id
-                    )
-                ).first()
-                
-                if not batch:
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only update attendance for interns in batches they lead"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only update attendance for interns in their batch"
                     )
             
             # INTERN cannot update attendance
@@ -373,25 +369,23 @@ class AttendanceService(CRUDService[Attendance]):
             
             # TECH_LEAD can only delete attendance for interns in their batch
             elif current_user.role == "TECHNICAL_LEAD":
-                # Check if intern is in a batch led by this Tech Lead
+                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
                 if target_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Intern is not assigned to any batch"
                     )
                 
-                batch = db.query(Batch).filter(
-                    Batch.id == target_user.batch_id,
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id
-                    )
-                ).first()
-                
-                if not batch:
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete attendance for interns in batches they lead"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if target_user.batch_id != current_user.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only delete attendance for interns in their batch"
                     )
             
             # INTERN cannot delete attendance
@@ -496,12 +490,12 @@ class AttendanceService(CRUDService[Attendance]):
         
         # RBAC: Tech Lead can only see their batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            query = query.join(Batch, Profile.batch_id == Batch.id).filter(
-                or_(
-                    Batch.first_tech_lead_id == current_user.id,
-                    Batch.second_tech_lead_id == current_user.id
-                )
-            )
+            # NEW ARCHITECTURE: Filter by tech lead's batch_id
+            if current_user.batch_id:
+                query = query.filter(Profile.batch_id == current_user.batch_id)
+            else:
+                # Tech lead has no batch, show nothing
+                query = query.filter(Profile.id == None)
         
         # Filter by batch
         if batch_id:
@@ -590,14 +584,18 @@ class AttendanceService(CRUDService[Attendance]):
         
         # RBAC: Tech Lead can only see interns in their batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            if intern.batch_id:
-                batch = db.get(Batch, intern.batch_id)
-                if batch and (batch.first_tech_lead_id != current_user.id and 
-                             batch.second_tech_lead_id != current_user.id):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only view analytics for interns in their batches"
-                    )
+            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
+            if current_user.batch_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead is not assigned to any batch"
+                )
+            
+            if intern.batch_id != current_user.batch_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tech Lead can only view analytics for interns in their batch"
+                )
         
         # Base query for counts
         query = db.query(
@@ -708,12 +706,12 @@ class AttendanceService(CRUDService[Attendance]):
         
         # RBAC: Tech Lead can only see interns in their batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            query = query.join(Batch, Profile.batch_id == Batch.id).filter(
-                or_(
-                    Batch.first_tech_lead_id == current_user.id,
-                    Batch.second_tech_lead_id == current_user.id
-                )
-            )
+            # NEW ARCHITECTURE: Filter by tech lead's batch_id
+            if current_user.batch_id:
+                query = query.filter(Profile.batch_id == current_user.batch_id)
+            else:
+                # Tech lead has no batch, show no interns
+                query = query.filter(Profile.id == None)
         
         # Filter by batch if specified
         if batch_id:

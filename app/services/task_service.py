@@ -28,17 +28,17 @@ class TaskService(CRUDService[Task]):
             
             # Tech Lead can only create tasks for their assigned batches
             if current_user.role == "TECHNICAL_LEAD":
-                batch = db.get(Batch, payload.batch_id)
-                if not batch:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Batch not found"
-                    )
-                # Check if current user is either first or second tech lead
-                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
+                # NEW ARCHITECTURE: Check if tech lead is assigned to this batch
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only create tasks for their assigned batches"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if current_user.batch_id != payload.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only create tasks for their assigned batch"
                     )
             
             # Validate assigned_to user exists (ALLOW CROSS-BATCH ASSIGNMENT)
@@ -181,11 +181,17 @@ class TaskService(CRUDService[Task]):
             
             # Access control for Tech Lead
             if current_user.role == "TECHNICAL_LEAD":
-                # Check if current user is either first or second tech lead
-                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
+                # NEW ARCHITECTURE: Check if tech lead is assigned to this batch
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only update tasks in their assigned batches"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if current_user.batch_id != task.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only update tasks in their assigned batch"
                     )
             
             # Validate assigned_to user exists (ALLOW CROSS-BATCH ASSIGNMENT)
@@ -230,17 +236,17 @@ class TaskService(CRUDService[Task]):
             
             # Access control for Tech Lead
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                batch = db.get(Batch, task.batch_id)
-                if not batch:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Associated batch not found"
-                    )
-                # Check if current user is either first or second tech lead
-                if batch.first_tech_lead_id != current_user.id and batch.second_tech_lead_id != current_user.id:
+                # NEW ARCHITECTURE: Check if tech lead is assigned to this batch
+                if current_user.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete tasks in their assigned batches"
+                        detail="Tech Lead is not assigned to any batch"
+                    )
+                
+                if current_user.batch_id != task.batch_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only delete tasks in their assigned batch"
                     )
             
             # Call parent delete
