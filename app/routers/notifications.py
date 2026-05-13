@@ -68,6 +68,7 @@ def broadcast_notification(
 
 
 @router.put("/{notification_id}", response_model=NotificationResponse)
+@router.patch("/{notification_id}", response_model=NotificationResponse)
 def update_notification(
     notification_id: UUID,
     payload: NotificationUpdate,
