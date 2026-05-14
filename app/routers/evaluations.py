@@ -31,7 +31,7 @@ def export_evaluations(
 ):
     """
     Export evaluations as CSV with filtering.
-    - Tech Leads: Only their own evaluations
+    - Tech Leads: All evaluations from their assigned batches (batch-based access)
     - Admins: All evaluations
     
     Query params:
@@ -58,10 +58,17 @@ def export_evaluations(
             Batch, Profile.batch_id == Batch.id
         )
         
-        # CRITICAL: Tech Lead can only export their own evaluations
+        # CRITICAL: Tech Lead can export ALL evaluations from their assigned batches (batch-based access)
         if current_user.role == "TECHNICAL_LEAD":
-            query = query.filter(Evaluation.reviewed_by == current_user.id)
-            logger.info(f"Tech Lead filter applied: reviewed_by={current_user.id}")
+            from app.core.tech_lead_utils import get_tech_lead_batch_ids
+            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+            if tl_batch_ids:
+                query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+                logger.info(f"Tech Lead filter applied: batch_ids={tl_batch_ids}")
+            else:
+                # Tech lead has no batches assigned, export nothing
+                query = query.filter(Profile.id == None)
+                logger.info("Tech Lead has no assigned batches, exporting no evaluations")
         
         # Apply intern_ids filter
         if intern_ids and intern_ids.strip():

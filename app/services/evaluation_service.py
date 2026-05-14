@@ -297,13 +297,6 @@ class EvaluationService(CRUDService[Evaluation]):
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Tech Lead can only delete evaluations for interns in their assigned batches"
                     )
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Cannot delete evaluation for intern not in any batch"
-                    )
-                
-                # Already handled by is_tech_lead_for_batch check above, but keeping for completeness
-                # No additional check needed since proper validation already done
             elif current_user.role == "ADMIN":
                 # Admin can delete any evaluation
                 pass
