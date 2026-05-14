@@ -65,9 +65,7 @@ app = FastAPI(
 
 register_error_handlers(app)
 
-# =========================
-# ✅ HARD FIX FOR CORS
-# =========================
+
 
 origins = [
     "https://kf-frontend-rho.vercel.app",  # production frontend
