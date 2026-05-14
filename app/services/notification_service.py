@@ -205,7 +205,6 @@ class NotificationService(CRUDService[Notification]):
     ) -> Notification:
         try:
             from fastapi import HTTPException, status as http_status
-            from datetime import datetime, timezone
             
             if not current_user:
                 raise HTTPException(
@@ -233,9 +232,6 @@ class NotificationService(CRUDService[Notification]):
                     update_data["title"] = payload.title.strip()
                 if payload.message is not None:
                     update_data["message"] = payload.message.strip()
-                
-                # Set edited_at timestamp
-                update_data["edited_at"] = datetime.now(timezone.utc)
             
             # Anyone can mark their own notifications as read
             if payload.is_read is not None:
