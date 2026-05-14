@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from uuid import UUID
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -59,6 +61,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure JSON serialization to ensure UUIDs are strings
+from fastapi.responses import JSONResponse
+from typing import Any
+import json
+
+class UUIDJSONResponse(JSONResponse):
+    """Custom JSON response that ensures UUIDs are serialized as strings"""
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            default=str,  # Convert UUIDs and other non-serializable types to strings
+        ).encode("utf-8")
+
+# Set as default response class
+app.router.default_response_class = UUIDJSONResponse
+
 # =========================
 # ERROR HANDLERS
 # =========================
@@ -66,12 +88,30 @@ app = FastAPI(
 register_error_handlers(app)
 
 
+# =========================
+# CORS CONFIGURATION
+# =========================
 
-origins = [
-    "https://kf-frontend-rho.vercel.app",  # production frontend
+# Build CORS origins list from environment variable + defaults
+origins = []
+
+# Add production frontend
+origins.append("https://kf-frontend-rho.vercel.app")
+
+# Add local development origins
+origins.extend([
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-]
+])
+
+# Add custom origins from environment variable (comma-separated)
+if settings.CORS_ORIGINS:
+    custom_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+    origins.extend(custom_origins)
+    logger.info(f"📝 Added custom CORS origins from env: {custom_origins}")
+
+# Remove duplicates while preserving order
+origins = list(dict.fromkeys(origins))
 
 logger.info(f"🌍 Allowed CORS origins: {origins}")
 
@@ -81,6 +121,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # =========================

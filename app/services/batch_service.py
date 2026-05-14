@@ -52,6 +52,9 @@ class BatchService(CRUDService[Batch]):
         Enrich a single batch with tech lead information.
         Supports up to 3 tech leads with display format: "TL1/TL2/TL3"
         ALWAYS returns enriched structure for API consistency.
+        
+        Returns dict that will be validated by BatchResponse schema.
+        FastAPI will handle UUID to string serialization automatically.
         """
         tech_lead_names = []
         
