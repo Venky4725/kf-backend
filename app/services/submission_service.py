@@ -55,6 +55,7 @@ class SubmissionService(CRUDService[Submission]):
         batch_id: UUID | None = None,
         sort_by: str | None = None,
         order: str | None = None,
+        current_user=None,
     ) -> list[Submission]:
         try:
             # Start with base query - join with Profile and Batch for complete data
@@ -63,6 +64,17 @@ class SubmissionService(CRUDService[Submission]):
                 .join(Profile, Submission.user_id == Profile.id)
                 .outerjoin(Batch, Profile.batch_id == Batch.id)  # LEFT JOIN for batch
             )
+            
+            # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
+            if current_user and current_user.role == "TECHNICAL_LEAD":
+                # Tech Lead can only see submissions from interns in their assigned batches
+                from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids:
+                    query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+                else:
+                    # Tech lead has no batches assigned, show nothing
+                    query = query.filter(Profile.id == None)
             
             # Filter by user_id
             if user_id:

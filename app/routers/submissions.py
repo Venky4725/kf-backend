@@ -25,6 +25,7 @@ def get_submissions(
     sort_by: str | None = None,
     order: str | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     return submission_service.list_submissions(
         db,
@@ -36,6 +37,7 @@ def get_submissions(
         batch_id=batch_id,
         sort_by=sort_by,
         order=order,
+        current_user=current_user,
     )
 
 
@@ -44,7 +46,33 @@ def get_submission(
     submission_id: UUID,
     db: Session = Depends(get_db),
 ):
-    return submission_service.get(db, submission_id)
+    submission = submission_service.get(db, submission_id)
+    
+    # Enrich with batch info
+    try:
+        profile = db.query(submission_service.model.__table__.c.user_id).first()
+        from app.models.profile import Profile
+        from app.models.batch import Batch
+        
+        profile = db.get(Profile, submission.user_id)
+        if profile:
+            submission.submitted_by_name = profile.name
+            submission.batch_id = profile.batch_id
+            if profile.batch_id:
+                batch = db.get(Batch, profile.batch_id)
+                submission.batch_name = batch.name if batch else None
+            else:
+                submission.batch_name = None
+        else:
+            submission.submitted_by_name = None
+            submission.batch_id = None
+            submission.batch_name = None
+    except Exception:
+        submission.submitted_by_name = None
+        submission.batch_id = None
+        submission.batch_name = None
+    
+    return submission
 
 
 @router.post("", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
