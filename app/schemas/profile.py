@@ -31,7 +31,8 @@ class ProfileCreate(BaseModel):
     @model_validator(mode='after')
     def validate_intern_has_batch(self):
         """Ensure INTERN role has either batch_id or batch_name"""
-        if self.role and self.role.upper() == 'INTERN':
+        # Role is already normalized to uppercase by field validator
+        if self.role == 'INTERN':
             if not self.batch_id and not self.batch_name:
                 raise ValueError('Batch is required for INTERN role. Provide either batch_id or batch_name.')
         return self
