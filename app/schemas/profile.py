@@ -1,6 +1,7 @@
 # app/schemas/profile.py
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -9,9 +10,13 @@ class ProfileCreate(BaseModel):
     name: str
     email: EmailStr
     role: str
-    tech_stack: str | None = None
-    batch_id: UUID | None = Field(None, validation_alias="batch")  # Accept both "batch_id" and "batch"
-    batch_name: str | None = None  # For CSV upload (batch lookup/creation)
+    tech_stack: Optional[str] = None
+    batch_id: Optional[UUID] = Field(None, validation_alias="batch")  # Accept both "batch_id" and "batch"
+    batch_name: Optional[str] = None  # For CSV upload (batch lookup/creation)
+    
+    model_config = {
+        "populate_by_name": True,  # Allow both field name and alias
+    }
     
     @field_validator('role')
     @classmethod
@@ -30,19 +35,28 @@ class ProfileCreate(BaseModel):
     
     @model_validator(mode='after')
     def validate_intern_has_batch(self):
-        """Ensure INTERN role has either batch_id or batch_name"""
+        """
+        Ensure INTERN role has either batch_id or batch_name.
+        This runs AFTER all field validators and field population.
+        At this point, self.batch_id contains the parsed UUID (from either 'batch' or 'batch_id' field).
+        """
         # Role is already normalized to uppercase by field validator
         if self.role == 'INTERN':
-            if not self.batch_id and not self.batch_name:
+            # Check if EITHER batch_id OR batch_name is provided
+            has_batch_id = self.batch_id is not None
+            has_batch_name = self.batch_name is not None and self.batch_name.strip()
+            
+            if not has_batch_id and not has_batch_name:
                 raise ValueError('Batch is required for INTERN role. Provide either batch_id or batch_name.')
+        
         return self
 
 
 class ProfileUpdate(BaseModel):
-    name: str | None = None
-    email: EmailStr | None = None
-    tech_stack: str | None = None
-    batch_id: UUID | None = None
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    tech_stack: Optional[str] = None
+    batch_id: Optional[UUID] = None
 
 
 class ProfileResponse(BaseModel):
@@ -50,16 +64,17 @@ class ProfileResponse(BaseModel):
     name: str
     email: EmailStr
     role: str
-    tech_stack: str | None
-    batch_id: UUID | None
+    tech_stack: Optional[str]
+    batch_id: Optional[UUID]
     # Authentication fields
     must_change_password: bool
     is_active: bool
-    password_changed_at: datetime | None
-    last_login_at: datetime | None
+    password_changed_at: Optional[datetime]
+    last_login_at: Optional[datetime]
     # Timestamps
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,
+    }
