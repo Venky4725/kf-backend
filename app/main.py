@@ -113,6 +113,12 @@ if settings.CORS_ORIGINS:
 # Remove duplicates while preserving order
 origins = list(dict.fromkeys(origins))
 
+# Also ensure we are including all potential frontends in production
+if settings.ENVIRONMENT == "production":
+    # Make sure production frontend is explicitly included
+    if "https://kf-frontend-rho.vercel.app" not in origins:
+        origins.append("https://kf-frontend-rho.vercel.app")
+
 logger.info(f"🌍 Allowed CORS origins: {origins}")
 
 app.add_middleware(

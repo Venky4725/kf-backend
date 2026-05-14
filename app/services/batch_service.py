@@ -241,7 +241,13 @@ class BatchService(CRUDService[Batch]):
         if "tech_stack" in updates and updates["tech_stack"] is not None:
             updates["tech_stack"] = updates["tech_stack"].strip()
         
-        return self.update(db, batch_id, updates)
+        # Update and save changes
+        updated_batch = self.update(db, batch_id, updates)
+        
+        # Refresh the batch to get the most up-to-date data from DB
+        db.refresh(updated_batch)
+        
+        return updated_batch
 
     def delete(self, db: Session, batch_id: UUID) -> None:
         """

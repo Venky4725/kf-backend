@@ -96,6 +96,9 @@ def update_batch(
     # Log what was saved
     logger.info(f"Batch updated - first_tech_lead_id: {batch.first_tech_lead_id}, second_tech_lead_id: {batch.second_tech_lead_id}, third_tech_lead_id: {getattr(batch, 'third_tech_lead_id', None)}")
     
+    # Refresh batch to make sure we're getting fresh data for enrichment 
+    db.refresh(batch)
+    
     # Enrich with tech lead information for consistent response
     enriched = batch_service._enrich_batch_response(db, batch)
     
