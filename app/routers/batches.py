@@ -83,10 +83,26 @@ def update_batch(
     payload: BatchUpdate,
     db: Session = Depends(get_db),
 ):
-    """Update a batch with enriched response."""
+    """Update a batch with enriched response and debug logging."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Log the update request
+    logger.info(f"Updating batch {batch_id} with payload: {payload.model_dump(exclude_unset=True)}")
+    
+    # Update the batch
     batch = batch_service.update_batch(db, batch_id, payload)
+    
+    # Log what was saved
+    logger.info(f"Batch updated - first_tech_lead_id: {batch.first_tech_lead_id}, second_tech_lead_id: {batch.second_tech_lead_id}, third_tech_lead_id: {getattr(batch, 'third_tech_lead_id', None)}")
+    
     # Enrich with tech lead information for consistent response
-    return batch_service._enrich_batch_response(db, batch)
+    enriched = batch_service._enrich_batch_response(db, batch)
+    
+    # Log the enriched response
+    logger.info(f"Enriched response - tech_leads_display: {enriched['tech_leads_display']}")
+    
+    return enriched
 
 
 @router.delete("/{batch_id}", status_code=status.HTTP_204_NO_CONTENT)

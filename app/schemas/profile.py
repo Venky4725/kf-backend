@@ -1,6 +1,6 @@
 # app/schemas/profile.py
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -10,8 +10,31 @@ class ProfileCreate(BaseModel):
     email: EmailStr
     role: str
     tech_stack: str | None = None
-    batch_id: UUID | None = None  # For form-based creation (direct batch selection)
+    batch_id: UUID | None = Field(None, validation_alias="batch")  # Accept both "batch_id" and "batch"
     batch_name: str | None = None  # For CSV upload (batch lookup/creation)
+    
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        """Validate and normalize role to uppercase"""
+        if not v or not v.strip():
+            raise ValueError('Role cannot be empty')
+        
+        normalized = v.strip().upper()
+        valid_roles = {'ADMIN', 'TECHNICAL_LEAD', 'INTERN'}
+        
+        if normalized not in valid_roles:
+            raise ValueError(f'Role must be one of: {", ".join(sorted(valid_roles))}')
+        
+        return normalized
+    
+    @model_validator(mode='after')
+    def validate_intern_has_batch(self):
+        """Ensure INTERN role has either batch_id or batch_name"""
+        if self.role and self.role.upper() == 'INTERN':
+            if not self.batch_id and not self.batch_name:
+                raise ValueError('Batch is required for INTERN role. Provide either batch_id or batch_name.')
+        return self
 
 
 class ProfileUpdate(BaseModel):

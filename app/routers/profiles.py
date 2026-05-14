@@ -69,11 +69,25 @@ def create_profile(
     db: Session = Depends(get_db),
     current_user=Depends(auth_get_current_user),
 ):
-    """Create a new profile with required batch_name."""
+    """
+    Create a new profile.
+    
+    For INTERN role: batch_id or batch_name is required (validated in schema).
+    Frontend can send either "batch" or "batch_id" field - both are accepted.
+    """
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Creating profile with payload: {payload.model_dump()}")
-    logger.info(f"Current user: {current_user.id} ({current_user.role})")
+    
+    # Log the raw payload for debugging
+    logger.info(f"POST /profiles - Creating profile")
+    logger.info(f"  Name: {payload.name}")
+    logger.info(f"  Email: {payload.email}")
+    logger.info(f"  Role: {payload.role}")
+    logger.info(f"  Tech Stack: {payload.tech_stack}")
+    logger.info(f"  Batch ID: {payload.batch_id}")
+    logger.info(f"  Batch Name: {payload.batch_name}")
+    logger.info(f"  Current user: {current_user.id} ({current_user.role})")
+    
     return profile_service.create_profile(db, payload, current_user)
 
 

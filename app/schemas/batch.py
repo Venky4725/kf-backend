@@ -79,13 +79,15 @@ class BatchResponse(BaseModel):
     start_date: date
     first_tech_lead_id: UUID | None
     second_tech_lead_id: UUID | None
-    third_tech_lead_id: UUID | None
-    # Include tech lead details for frontend display
+    third_tech_lead_id: UUID | None = None
+    # Tech lead details for frontend display
     first_tech_lead: TechLeadInfo | None = None
     second_tech_lead: TechLeadInfo | None = None
     third_tech_lead: TechLeadInfo | None = None
-    # Computed field for display (e.g., "Tarun/Jaya/Rakesh" or "Tarun/Jaya" or "Tarun" or "Unassigned")
-    tech_leads_display: str | None = None
+    # DEPRECATED: Use tech_leads_display instead
+    technical_lead: str | None = None  # Backward compatibility
+    # PRIMARY: Use this field for display
+    tech_leads_display: str = "Unassigned"
     created_at: datetime
     updated_at: datetime
 

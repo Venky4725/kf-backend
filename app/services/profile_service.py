@@ -44,15 +44,15 @@ class ProfileService(CRUDService[Profile]):
         import logging
         logger = logging.getLogger(__name__)
         
-        role = payload.role.strip().upper()
-        if role not in VALID_PROFILE_ROLES:
-            raise ValidationError(f"Role must be one of: {', '.join(sorted(VALID_PROFILE_ROLES))}.")
+        # Role is already validated and normalized to uppercase in schema
+        role = payload.role
+        logger.info(f"Creating profile with role: {role}")
         
         # Handle batch assignment based on role
         batch_id = None
         
         if role == "INTERN":
-            # Interns MUST have either batch_id or batch_name
+            # Interns MUST have either batch_id or batch_name (validated in schema)
             if payload.batch_id:
                 # Form-based creation: batch_id provided directly
                 logger.info(f"Creating INTERN with batch_id: {payload.batch_id}")
@@ -98,13 +98,6 @@ class ProfileService(CRUDService[Profile]):
                 
                 batch_id = batch.id
                 logger.info(f"Assigning INTERN to batch_id: {batch_id}")
-            else:
-                # Neither batch_id nor batch_name provided
-                from fastapi import HTTPException
-                raise HTTPException(
-                    status_code=400,
-                    detail="Batch is required for INTERN role. Provide either batch_id or batch_name"
-                )
         
         elif role == "TECHNICAL_LEAD":
             # TECHNICAL_LEAD can optionally have batch_id
@@ -122,7 +115,6 @@ class ProfileService(CRUDService[Profile]):
                 
                 # Allow multiple tech leads per batch (no limit)
                 batch_id = payload.batch_id
-                logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
                 logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
             else:
                 logger.info(f"Creating TECHNICAL_LEAD without batch assignment")

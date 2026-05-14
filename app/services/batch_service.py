@@ -51,7 +51,11 @@ class BatchService(CRUDService[Batch]):
         """
         Enrich a single batch with tech lead information.
         Supports up to 3 tech leads with display format: "TL1/TL2/TL3"
+        ALWAYS returns enriched structure for API consistency.
         """
+        tech_lead_names = []
+        
+        # Initialize response with all fields
         batch_dict = {
             "id": batch.id,
             "name": batch.name,
@@ -65,10 +69,9 @@ class BatchService(CRUDService[Batch]):
             "first_tech_lead": None,
             "second_tech_lead": None,
             "third_tech_lead": None,
+            "technical_lead": None,  # Backward compatibility
             "tech_leads_display": "Unassigned"
         }
-        
-        tech_lead_names = []
         
         # Get first tech lead info
         if batch.first_tech_lead_id:
@@ -106,9 +109,12 @@ class BatchService(CRUDService[Batch]):
         
         # Build display string
         if tech_lead_names:
-            batch_dict["tech_leads_display"] = "/".join(tech_lead_names)
+            display_string = "/".join(tech_lead_names)
+            batch_dict["tech_leads_display"] = display_string
+            batch_dict["technical_lead"] = display_string  # Backward compatibility
         else:
             batch_dict["tech_leads_display"] = "Unassigned"
+            batch_dict["technical_lead"] = "Unassigned"  # Backward compatibility
         
         return batch_dict
 
