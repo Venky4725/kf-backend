@@ -35,23 +35,19 @@ class EvaluationService(CRUDService[Evaluation]):
         
         # Tech Lead can only create evaluations for interns in their assigned batches
         if current_user.role == "TECHNICAL_LEAD":
-            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
-            if current_user.batch_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead is not assigned to any batch"
-                )
-            
+            # Check if intern is in any batch where TL is assigned
             if intern.batch_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot evaluate intern not assigned to any batch"
                 )
             
-            if intern.batch_id != current_user.batch_id:
+            # Check if TL is assigned to intern's batch (any TL position)
+            from app.core.tech_lead_utils import is_tech_lead_for_batch
+            if not is_tech_lead_for_batch(db, current_user.id, intern.batch_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead can only evaluate interns in their assigned batch"
+                    detail="Tech Lead can only evaluate interns in their assigned batches"
                 )
 
         return self.create(
@@ -103,14 +99,16 @@ class EvaluationService(CRUDService[Evaluation]):
             
             # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                # NEW ARCHITECTURE: Tech Lead can only see evaluations for interns in their batch
-                if current_user.batch_id:
-                    query = query.filter(Profile.batch_id == current_user.batch_id)
-                    logger.info(f"Tech Lead filter applied: batch_id={current_user.batch_id}")
+                # Tech Lead can only see evaluations for interns in their assigned batches
+                from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids:
+                    query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+                    logger.info(f"Tech Lead filter applied: batch_ids={tl_batch_ids}")
                 else:
-                    # Tech lead has no batch, show nothing
+                    # Tech lead has no batches assigned, show nothing
                     query = query.filter(Profile.id == None)
-                    logger.info("Tech Lead has no batch_id, showing no evaluations")
+                    logger.info("Tech Lead has no assigned batches, showing no evaluations")
             
             # Filter by intern_id
             if intern_id:
@@ -214,23 +212,19 @@ class EvaluationService(CRUDService[Evaluation]):
                     detail="Intern profile not found"
                 )
             
-            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
-            if current_user.batch_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead is not assigned to any batch"
-                )
-            
+            # Check if intern is in any batch where TL is assigned
             if intern.batch_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Cannot update evaluation for intern not in any batch"
                 )
             
-            if intern.batch_id != current_user.batch_id:
+            # Check if TL is assigned to intern's batch (any TL position)
+            from app.core.tech_lead_utils import is_tech_lead_for_batch
+            if not is_tech_lead_for_batch(db, current_user.id, intern.batch_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead can only update evaluations in their assigned batch"
+                    detail="Tech Lead can only update evaluations for interns in their assigned batches"
                 )
             
             # CRITICAL: Tech Lead cannot change intern_id or reviewed_by
@@ -289,24 +283,27 @@ class EvaluationService(CRUDService[Evaluation]):
                         detail="Intern profile not found"
                     )
                 
-                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
-                if current_user.batch_id is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead is not assigned to any batch"
-                    )
-                
+                # Check if intern is in any batch where TL is assigned
                 if intern.batch_id is None:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Cannot delete evaluation for intern not in any batch"
                     )
                 
-                if intern.batch_id != current_user.batch_id:
+                # Check if TL is assigned to intern's batch (any TL position)
+                from app.core.tech_lead_utils import is_tech_lead_for_batch
+                if not is_tech_lead_for_batch(db, current_user.id, intern.batch_id):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete evaluations in their assigned batch"
+                        detail="Tech Lead can only delete evaluations for interns in their assigned batches"
                     )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot delete evaluation for intern not in any batch"
+                    )
+                
+                # Already handled by is_tech_lead_for_batch check above, but keeping for completeness
+                # No additional check needed since proper validation already done
             elif current_user.role == "ADMIN":
                 # Admin can delete any evaluation
                 pass

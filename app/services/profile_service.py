@@ -15,22 +15,9 @@ VALID_PROFILE_ROLES = {"ADMIN", "TECHNICAL_LEAD", "INTERN"}
 # Default password for new users
 DEFAULT_PASSWORD = "Welcome@123"
 
-
-def is_tech_lead_for_batch(db: Session, user_id: UUID, batch_id: UUID) -> bool:
-    """
-    Check if a user is a tech lead for a specific batch.
-    
-    Uses the NEW architecture: checks if user has role=TECHNICAL_LEAD and batch_id matches.
-    This replaces the legacy first_tech_lead_id/second_tech_lead_id checks.
-    """
-    tech_lead = db.query(Profile).filter(
-        Profile.id == user_id,
-        Profile.role == "TECHNICAL_LEAD",
-        Profile.batch_id == batch_id,
-        Profile.is_active == True
-    ).first()
-    
-    return tech_lead is not None
+# REMOVED: Deprecated function - use app.core.tech_lead_utils.is_tech_lead_for_batch instead
+# Technical Lead batch assignments are now managed via Batch table (first/second/third_tech_lead_id)
+# NOT via Profile.batch_id
 
 
 class ProfileService(CRUDService[Profile]):
@@ -100,25 +87,10 @@ class ProfileService(CRUDService[Profile]):
                 logger.info(f"Assigning INTERN to batch_id: {batch_id}")
         
         elif role == "TECHNICAL_LEAD":
-            # TECHNICAL_LEAD can optionally have batch_id
-            if payload.batch_id:
-                logger.info(f"Creating TECHNICAL_LEAD with batch_id: {payload.batch_id}")
-                
-                # Validate batch exists
-                batch = db.query(Batch).filter(Batch.id == payload.batch_id).first()
-                if not batch:
-                    from fastapi import HTTPException
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Batch with id '{payload.batch_id}' does not exist"
-                    )
-                
-                # Allow multiple tech leads per batch (no limit)
-                batch_id = payload.batch_id
-                logger.info(f"Assigning TECHNICAL_LEAD to batch: {batch.name} (ID: {batch.id})")
-            else:
-                logger.info(f"Creating TECHNICAL_LEAD without batch assignment")
-                batch_id = None
+            # TECHNICAL_LEAD should NOT have batch_id set in Profile table
+            # TL assignments are managed via Batch table (first/second/third_tech_lead_id)
+            batch_id = None
+            logger.info(f"Creating TECHNICAL_LEAD without batch_id (assignments managed via Batch table)")
         
         else:
             # ADMIN does not require batch (and typically shouldn't have one)
@@ -196,17 +168,19 @@ class ProfileService(CRUDService[Profile]):
         
         # RBAC: Tech Lead can only see interns in batches they lead
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            # NEW ARCHITECTURE: Filter by interns whose batch_id matches tech lead's batch_id
-            if current_user.batch_id:
+            # Filter by interns in batches where TL is assigned (any position)
+            from app.core.tech_lead_utils import get_tech_lead_batch_ids
+            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+            if tl_batch_ids:
                 query = query.filter(
                     Profile.role == "INTERN",
-                    Profile.batch_id == current_user.batch_id
+                    Profile.batch_id.in_(tl_batch_ids)
                 )
-                logger.info(f"Tech Lead filter applied: only interns in batch {current_user.batch_id}")
+                logger.info(f"Tech Lead filter applied: only interns in batches {tl_batch_ids}")
             else:
-                # Tech lead has no batch assigned, show no interns
+                # Tech lead has no batches assigned, show no interns
                 query = query.filter(Profile.id == None)  # Returns empty result
-                logger.info("Tech Lead has no batch_id, showing no interns")
+                logger.info("Tech Lead has no assigned batches, showing no interns")
         
         elif current_user and current_user.role == "INTERN":
             # Interns can only see their own profile
@@ -285,23 +259,53 @@ class ProfileService(CRUDService[Profile]):
                     logger.info("Tech Lead updating own profile")
                     pass
                 # Tech Lead can update interns in their batch (ALLOW BATCH CHANGE)
-                # Check if intern is currently in their batch OR if they're assigning to their batch
                 elif existing_profile.role == "INTERN":
-                    # Allow if intern is currently in their batch
-                    if existing_profile.batch_id == current_user.batch_id:
-                        logger.info(f"Tech Lead updating intern in their batch (batch_id: {current_user.batch_id})")
-                        pass
-                    # Also allow if Tech Lead is assigning intern TO their batch
-                    elif "batch_id" in payload.model_dump(exclude_unset=True) and payload.batch_id == current_user.batch_id:
-                        logger.info(f"Tech Lead assigning intern to their batch (batch_id: {current_user.batch_id})")
-                        pass
+                    from app.core.tech_lead_utils import is_tech_lead_for_batch, get_tech_lead_batch_ids
+                    
+                    # Check if intern is currently in any batch where TL is assigned
+                    if existing_profile.batch_id:
+                        if is_tech_lead_for_batch(db, current_user.id, existing_profile.batch_id):
+                            logger.info(f"Tech Lead updating intern in their assigned batch (batch_id: {existing_profile.batch_id})")
+                            pass
+                        # Also allow if Tech Lead is assigning intern TO one of their batches
+                        elif "batch_id" in payload.model_dump(exclude_unset=True):
+                            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                            if payload.batch_id in tl_batch_ids:
+                                logger.info(f"Tech Lead assigning intern to their batch (batch_id: {payload.batch_id})")
+                                pass
+                            else:
+                                logger.warning(f"Tech Lead {current_user.id} attempted to update intern {profile_id} not in their batches")
+                                from fastapi import HTTPException, status as http_status
+                                raise HTTPException(
+                                    status_code=http_status.HTTP_403_FORBIDDEN,
+                                    detail="You can only update interns in your assigned batches"
+                                )
+                        else:
+                            logger.warning(f"Tech Lead {current_user.id} attempted to update intern {profile_id} not in their batches")
+                            from fastapi import HTTPException, status as http_status
+                            raise HTTPException(
+                                status_code=http_status.HTTP_403_FORBIDDEN,
+                                detail="You can only update interns in your assigned batches"
+                            )
                     else:
-                        logger.warning(f"Tech Lead {current_user.id} attempted to update intern {profile_id} not in their batch")
-                        from fastapi import HTTPException, status as http_status
-                        raise HTTPException(
-                            status_code=http_status.HTTP_403_FORBIDDEN,
-                            detail="You can only update interns in your batch or assign interns to your batch"
-                        )
+                        # Intern has no batch - allow TL to assign to their batch
+                        if "batch_id" in payload.model_dump(exclude_unset=True):
+                            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                            if payload.batch_id in tl_batch_ids:
+                                logger.info(f"Tech Lead assigning unassigned intern to their batch")
+                                pass
+                            else:
+                                from fastapi import HTTPException, status as http_status
+                                raise HTTPException(
+                                    status_code=http_status.HTTP_403_FORBIDDEN,
+                                    detail="You can only assign interns to your assigned batches"
+                                )
+                        else:
+                            from fastapi import HTTPException, status as http_status
+                            raise HTTPException(
+                                status_code=http_status.HTTP_403_FORBIDDEN,
+                                detail="You can only update interns in your assigned batches"
+                            )
                 else:
                     logger.warning(f"Tech Lead {current_user.id} attempted to update non-intern profile {profile_id}")
                     from fastapi import HTTPException, status as http_status
@@ -418,7 +422,8 @@ class ProfileService(CRUDService[Profile]):
             assigned_batches = db.query(Batch).filter(
                 or_(
                     Batch.first_tech_lead_id == profile_id,
-                    Batch.second_tech_lead_id == profile_id
+                    Batch.second_tech_lead_id == profile_id,
+                    Batch.third_tech_lead_id == profile_id
                 )
             ).all()
             if assigned_batches:
@@ -466,11 +471,11 @@ class ProfileService(CRUDService[Profile]):
         
         # If TL has no dependencies, unassign from batches (safety check)
         if profile.role == "TECHNICAL_LEAD":
-            # Unassign from first_tech_lead_id
+            # Unassign from all three TL positions
             updated_first = db.query(Batch).filter(Batch.first_tech_lead_id == profile_id).update({"first_tech_lead_id": None})
-            # Unassign from second_tech_lead_id
             updated_second = db.query(Batch).filter(Batch.second_tech_lead_id == profile_id).update({"second_tech_lead_id": None})
-            logger.info(f"Unassigned TL from {updated_first + updated_second} batches")
+            updated_third = db.query(Batch).filter(Batch.third_tech_lead_id == profile_id).update({"third_tech_lead_id": None})
+            logger.info(f"Unassigned TL from {updated_first + updated_second + updated_third} batches")
             db.flush()
         
         # Add audit log

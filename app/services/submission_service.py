@@ -150,15 +150,8 @@ class SubmissionService(CRUDService[Submission]):
             # Admin can update any submission
             pass
         elif current_user.role == "TECHNICAL_LEAD":
-            # Tech Lead can update submissions from interns in their batch
+            # Tech Lead can update submissions from interns in their batches
             intern = db.get(Profile, submission.user_id)
-            
-            # NEW ARCHITECTURE: Check if intern is in tech lead's batch
-            if current_user.batch_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead is not assigned to any batch"
-                )
             
             if intern.batch_id is None:
                 raise HTTPException(
@@ -166,10 +159,12 @@ class SubmissionService(CRUDService[Submission]):
                     detail="Cannot update submission for intern not in any batch"
                 )
             
-            if intern.batch_id != current_user.batch_id:
+            # MULTI-BATCH: Check if intern is in any batch where TL is assigned
+            from app.core.tech_lead_utils import is_tech_lead_for_batch
+            if not is_tech_lead_for_batch(db, current_user.id, intern.batch_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tech Lead can only update submissions from their assigned batch"
+                    detail="Tech Lead can only update submissions from their assigned batches"
                 )
         elif current_user.role == "INTERN":
             # Intern can only update their own submissions
@@ -195,15 +190,8 @@ class SubmissionService(CRUDService[Submission]):
                 # Admin can delete any submission
                 pass
             elif current_user.role == "TECHNICAL_LEAD":
-                # Tech Lead can delete submissions from interns in their batch
+                # Tech Lead can delete submissions from interns in their batches
                 intern = db.get(Profile, submission.user_id)
-                
-                # NEW ARCHITECTURE: Check if intern is in tech lead's batch
-                if current_user.batch_id is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead is not assigned to any batch"
-                    )
                 
                 if intern.batch_id is None:
                     raise HTTPException(
@@ -211,10 +199,12 @@ class SubmissionService(CRUDService[Submission]):
                         detail="Cannot delete submission for intern not in any batch"
                     )
                 
-                if intern.batch_id != current_user.batch_id:
+                # MULTI-BATCH: Check if intern is in any batch where TL is assigned
+                from app.core.tech_lead_utils import is_tech_lead_for_batch
+                if not is_tech_lead_for_batch(db, current_user.id, intern.batch_id):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Tech Lead can only delete submissions from their assigned batch"
+                        detail="Tech Lead can only delete submissions from their assigned batches"
                     )
             elif current_user.role == "INTERN":
                 # Intern can only delete their own submissions

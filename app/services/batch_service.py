@@ -137,7 +137,7 @@ class BatchService(CRUDService[Batch]):
         Returns enriched batch data with tech lead names.
         
         If tech_lead_id is provided, returns batches where the tech lead is assigned
-        as either first_tech_lead_id OR second_tech_lead_id.
+        as first_tech_lead_id, second_tech_lead_id, or third_tech_lead_id.
         """
         from sqlalchemy import asc, desc
         
@@ -145,27 +145,14 @@ class BatchService(CRUDService[Batch]):
         
         if tech_lead_id:
             # Find batches where tech lead is assigned as first, second, OR third tech lead
-            tl_profile = db.query(Profile).filter(Profile.id == tech_lead_id).first()
-            
-            if tl_profile and tl_profile.batch_id:
-                # TL has a batch_id, include batches where TL is assigned
-                query = query.filter(
-                    or_(
-                        Batch.first_tech_lead_id == tech_lead_id,
-                        Batch.second_tech_lead_id == tech_lead_id,
-                        Batch.third_tech_lead_id == tech_lead_id,
-                        Batch.id == tl_profile.batch_id
-                    )
+            # ONLY check Batch table assignments (NOT Profile.batch_id)
+            query = query.filter(
+                or_(
+                    Batch.first_tech_lead_id == tech_lead_id,
+                    Batch.second_tech_lead_id == tech_lead_id,
+                    Batch.third_tech_lead_id == tech_lead_id
                 )
-            else:
-                # TL has no batch_id, check all tech lead positions
-                query = query.filter(
-                    or_(
-                        Batch.first_tech_lead_id == tech_lead_id,
-                        Batch.second_tech_lead_id == tech_lead_id,
-                        Batch.third_tech_lead_id == tech_lead_id
-                    )
-                )
+            )
         
         # Search in name and tech_stack
         if search and search.strip():

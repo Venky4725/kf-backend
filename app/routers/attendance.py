@@ -148,11 +148,9 @@ def get_dashboard_trends(
     
     # RBAC: Tech Lead can only see their batches
     if current_user and current_user.role == "TECHNICAL_LEAD":
+        from app.core.tech_lead_utils import get_tech_lead_batch_filter
         query = query.join(Batch, Profile.batch_id == Batch.id).filter(
-            or_(
-                Batch.first_tech_lead_id == current_user.id,
-                Batch.second_tech_lead_id == current_user.id
-            )
+            get_tech_lead_batch_filter(current_user.id)
         )
     
     # Filter by batch
@@ -231,11 +229,9 @@ def get_dashboard_batch_wise(
     
     # RBAC: Tech Lead can only see their batches
     if current_user and current_user.role == "TECHNICAL_LEAD":
+        from app.core.tech_lead_utils import get_tech_lead_batch_filter
         query = query.filter(
-            or_(
-                Batch.first_tech_lead_id == current_user.id,
-                Batch.second_tech_lead_id == current_user.id
-            )
+            get_tech_lead_batch_filter(current_user.id)
         )
     
     # Filter by date range
