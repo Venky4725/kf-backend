@@ -11,15 +11,27 @@ class BatchCreate(BaseModel):
     start_date: date
     first_tech_lead_id: UUID | None = None
     second_tech_lead_id: UUID | None = None
+    third_tech_lead_id: UUID | None = None
     
-    @field_validator('second_tech_lead_id')
+    @field_validator('second_tech_lead_id', 'third_tech_lead_id')
     @classmethod
     def validate_tech_leads_different(cls, v, info):
-        """Ensure first and second tech leads are different"""
-        if v is not None and 'first_tech_lead_id' in info.data:
-            first_tl = info.data.get('first_tech_lead_id')
-            if first_tl is not None and v == first_tl:
-                raise ValueError('First and second tech leads must be different')
+        """Ensure all tech leads are different"""
+        if v is None:
+            return v
+        
+        # Get all tech lead IDs
+        first_tl = info.data.get('first_tech_lead_id')
+        second_tl = info.data.get('second_tech_lead_id')
+        
+        # Check against first tech lead
+        if first_tl is not None and v == first_tl:
+            raise ValueError('All tech leads must be different')
+        
+        # Check against second tech lead (for third_tech_lead_id)
+        if info.field_name == 'third_tech_lead_id' and second_tl is not None and v == second_tl:
+            raise ValueError('All tech leads must be different')
+        
         return v
 
 
@@ -29,15 +41,27 @@ class BatchUpdate(BaseModel):
     start_date: date | None = None
     first_tech_lead_id: UUID | None = None
     second_tech_lead_id: UUID | None = None
+    third_tech_lead_id: UUID | None = None
     
-    @field_validator('second_tech_lead_id')
+    @field_validator('second_tech_lead_id', 'third_tech_lead_id')
     @classmethod
     def validate_tech_leads_different(cls, v, info):
-        """Ensure first and second tech leads are different"""
-        if v is not None and 'first_tech_lead_id' in info.data:
-            first_tl = info.data.get('first_tech_lead_id')
-            if first_tl is not None and v == first_tl:
-                raise ValueError('First and second tech leads must be different')
+        """Ensure all tech leads are different"""
+        if v is None:
+            return v
+        
+        # Get all tech lead IDs
+        first_tl = info.data.get('first_tech_lead_id')
+        second_tl = info.data.get('second_tech_lead_id')
+        
+        # Check against first tech lead
+        if first_tl is not None and v == first_tl:
+            raise ValueError('All tech leads must be different')
+        
+        # Check against second tech lead (for third_tech_lead_id)
+        if info.field_name == 'third_tech_lead_id' and second_tl is not None and v == second_tl:
+            raise ValueError('All tech leads must be different')
+        
         return v
 
 
@@ -55,10 +79,12 @@ class BatchResponse(BaseModel):
     start_date: date
     first_tech_lead_id: UUID | None
     second_tech_lead_id: UUID | None
-    # NEW: Include tech lead details for frontend display
+    third_tech_lead_id: UUID | None
+    # Include tech lead details for frontend display
     first_tech_lead: TechLeadInfo | None = None
     second_tech_lead: TechLeadInfo | None = None
-    # NEW: Computed field for display (e.g., "John/Jane" or "John" or "Unassigned")
+    third_tech_lead: TechLeadInfo | None = None
+    # Computed field for display (e.g., "Tarun/Jaya/Rakesh" or "Tarun/Jaya" or "Tarun" or "Unassigned")
     tech_leads_display: str | None = None
     created_at: datetime
     updated_at: datetime

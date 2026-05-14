@@ -25,11 +25,15 @@ class BatchService(CRUDService[Batch]):
         if payload.second_tech_lead_id is not None:
             self._ensure_tech_lead(db, payload.second_tech_lead_id, "second")
         
-        # Ensure they are different (additional server-side check)
-        if (payload.first_tech_lead_id is not None and 
-            payload.second_tech_lead_id is not None and 
-            payload.first_tech_lead_id == payload.second_tech_lead_id):
-            raise ValidationError("First and second tech leads must be different.")
+        # Validate third tech lead
+        if payload.third_tech_lead_id is not None:
+            self._ensure_tech_lead(db, payload.third_tech_lead_id, "third")
+        
+        # Ensure they are all different
+        tech_leads = [payload.first_tech_lead_id, payload.second_tech_lead_id, payload.third_tech_lead_id]
+        tech_leads = [tl for tl in tech_leads if tl is not None]
+        if len(tech_leads) != len(set(tech_leads)):
+            raise ValidationError("All tech leads must be different.")
 
         return self.create(
             db,
@@ -39,13 +43,14 @@ class BatchService(CRUDService[Batch]):
                 "start_date": payload.start_date,
                 "first_tech_lead_id": payload.first_tech_lead_id,
                 "second_tech_lead_id": payload.second_tech_lead_id,
+                "third_tech_lead_id": payload.third_tech_lead_id,
             },
         )
 
     def _enrich_batch_response(self, db: Session, batch: Batch) -> dict:
         """
         Enrich a single batch with tech lead information.
-        This ensures consistent response structure across all batch endpoints.
+        Supports up to 3 tech leads with display format: "TL1/TL2/TL3"
         """
         batch_dict = {
             "id": batch.id,
@@ -54,12 +59,16 @@ class BatchService(CRUDService[Batch]):
             "start_date": batch.start_date,
             "first_tech_lead_id": batch.first_tech_lead_id,
             "second_tech_lead_id": batch.second_tech_lead_id,
+            "third_tech_lead_id": getattr(batch, 'third_tech_lead_id', None),
             "created_at": batch.created_at,
             "updated_at": batch.updated_at,
             "first_tech_lead": None,
             "second_tech_lead": None,
+            "third_tech_lead": None,
             "tech_leads_display": "Unassigned"
         }
+        
+        tech_lead_names = []
         
         # Get first tech lead info
         if batch.first_tech_lead_id:
@@ -70,6 +79,7 @@ class BatchService(CRUDService[Batch]):
                     "name": first_tl.name,
                     "email": first_tl.email
                 }
+                tech_lead_names.append(first_tl.name)
         
         # Get second tech lead info
         if batch.second_tech_lead_id:
@@ -80,17 +90,23 @@ class BatchService(CRUDService[Batch]):
                     "name": second_tl.name,
                     "email": second_tl.email
                 }
+                tech_lead_names.append(second_tl.name)
+        
+        # Get third tech lead info
+        third_tech_lead_id = getattr(batch, 'third_tech_lead_id', None)
+        if third_tech_lead_id:
+            third_tl = db.get(Profile, third_tech_lead_id)
+            if third_tl:
+                batch_dict["third_tech_lead"] = {
+                    "id": third_tl.id,
+                    "name": third_tl.name,
+                    "email": third_tl.email
+                }
+                tech_lead_names.append(third_tl.name)
         
         # Build display string
-        first_name = batch_dict["first_tech_lead"]["name"] if batch_dict["first_tech_lead"] else None
-        second_name = batch_dict["second_tech_lead"]["name"] if batch_dict["second_tech_lead"] else None
-        
-        if first_name and second_name:
-            batch_dict["tech_leads_display"] = f"{first_name}/{second_name}"
-        elif first_name:
-            batch_dict["tech_leads_display"] = first_name
-        elif second_name:
-            batch_dict["tech_leads_display"] = second_name
+        if tech_lead_names:
+            batch_dict["tech_leads_display"] = "/".join(tech_lead_names)
         else:
             batch_dict["tech_leads_display"] = "Unassigned"
         
@@ -119,27 +135,26 @@ class BatchService(CRUDService[Batch]):
         query = db.query(Batch)
         
         if tech_lead_id:
-            # Find batches where tech lead is assigned as first OR second tech lead
+            # Find batches where tech lead is assigned as first, second, OR third tech lead
             tl_profile = db.query(Profile).filter(Profile.id == tech_lead_id).first()
             
             if tl_profile and tl_profile.batch_id:
-                # TL has a batch_id, so include:
-                # 1. Batches where TL is first_tech_lead_id
-                # 2. Batches where TL is second_tech_lead_id
-                # 3. Batch that TL belongs to (profile.batch_id)
+                # TL has a batch_id, include batches where TL is assigned
                 query = query.filter(
                     or_(
                         Batch.first_tech_lead_id == tech_lead_id,
                         Batch.second_tech_lead_id == tech_lead_id,
+                        Batch.third_tech_lead_id == tech_lead_id,
                         Batch.id == tl_profile.batch_id
                     )
                 )
             else:
-                # TL has no batch_id, check first_tech_lead_id OR second_tech_lead_id
+                # TL has no batch_id, check all tech lead positions
                 query = query.filter(
                     or_(
                         Batch.first_tech_lead_id == tech_lead_id,
-                        Batch.second_tech_lead_id == tech_lead_id
+                        Batch.second_tech_lead_id == tech_lead_id,
+                        Batch.third_tech_lead_id == tech_lead_id
                     )
                 )
         
@@ -183,26 +198,34 @@ class BatchService(CRUDService[Batch]):
         if "second_tech_lead_id" in updates and updates["second_tech_lead_id"] is not None:
             self._ensure_tech_lead(db, updates["second_tech_lead_id"], "second")
         
-        # Ensure they are different (if both are being set)
-        first_tl = updates.get("first_tech_lead_id")
-        second_tl = updates.get("second_tech_lead_id")
+        # Validate third tech lead if being updated
+        if "third_tech_lead_id" in updates and updates["third_tech_lead_id"] is not None:
+            self._ensure_tech_lead(db, updates["third_tech_lead_id"], "third")
         
-        # If both are in the update and both are not None, check they're different
-        if (first_tl is not None and second_tl is not None and first_tl == second_tl):
-            raise ValidationError("First and second tech leads must be different.")
+        # Get existing batch to check against existing values
+        batch = self.get(db, batch_id)
         
-        # If only one is being updated, check against the existing value
-        if first_tl is not None and "second_tech_lead_id" not in updates:
-            # Check against existing second_tech_lead_id
-            batch = self.get(db, batch_id)
-            if batch.second_tech_lead_id is not None and first_tl == batch.second_tech_lead_id:
-                raise ValidationError("First and second tech leads must be different.")
+        # Collect all tech lead IDs (both new and existing)
+        all_tech_leads = []
         
-        if second_tl is not None and "first_tech_lead_id" not in updates:
-            # Check against existing first_tech_lead_id
-            batch = self.get(db, batch_id)
-            if batch.first_tech_lead_id is not None and second_tl == batch.first_tech_lead_id:
-                raise ValidationError("First and second tech leads must be different.")
+        # First tech lead
+        first_tl = updates.get("first_tech_lead_id", batch.first_tech_lead_id)
+        if first_tl is not None:
+            all_tech_leads.append(first_tl)
+        
+        # Second tech lead
+        second_tl = updates.get("second_tech_lead_id", batch.second_tech_lead_id)
+        if second_tl is not None:
+            all_tech_leads.append(second_tl)
+        
+        # Third tech lead
+        third_tl = updates.get("third_tech_lead_id", batch.third_tech_lead_id)
+        if third_tl is not None:
+            all_tech_leads.append(third_tl)
+        
+        # Ensure all tech leads are different
+        if len(all_tech_leads) != len(set(all_tech_leads)):
+            raise ValidationError("All tech leads must be different.")
         
         if "name" in updates and updates["name"] is not None:
             updates["name"] = updates["name"].strip()
