@@ -45,6 +45,7 @@ class NotificationResponse(BaseModel):
     is_read: bool
     is_broadcast: bool | None = None
     created_at: datetime
+    edited_at: datetime | None = None  # NEW: Track when notification was edited
 
     class Config:
         from_attributes = True

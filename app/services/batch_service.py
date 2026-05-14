@@ -42,6 +42,60 @@ class BatchService(CRUDService[Batch]):
             },
         )
 
+    def _enrich_batch_response(self, db: Session, batch: Batch) -> dict:
+        """
+        Enrich a single batch with tech lead information.
+        This ensures consistent response structure across all batch endpoints.
+        """
+        batch_dict = {
+            "id": batch.id,
+            "name": batch.name,
+            "tech_stack": batch.tech_stack,
+            "start_date": batch.start_date,
+            "first_tech_lead_id": batch.first_tech_lead_id,
+            "second_tech_lead_id": batch.second_tech_lead_id,
+            "created_at": batch.created_at,
+            "updated_at": batch.updated_at,
+            "first_tech_lead": None,
+            "second_tech_lead": None,
+            "tech_leads_display": "Unassigned"
+        }
+        
+        # Get first tech lead info
+        if batch.first_tech_lead_id:
+            first_tl = db.get(Profile, batch.first_tech_lead_id)
+            if first_tl:
+                batch_dict["first_tech_lead"] = {
+                    "id": first_tl.id,
+                    "name": first_tl.name,
+                    "email": first_tl.email
+                }
+        
+        # Get second tech lead info
+        if batch.second_tech_lead_id:
+            second_tl = db.get(Profile, batch.second_tech_lead_id)
+            if second_tl:
+                batch_dict["second_tech_lead"] = {
+                    "id": second_tl.id,
+                    "name": second_tl.name,
+                    "email": second_tl.email
+                }
+        
+        # Build display string
+        first_name = batch_dict["first_tech_lead"]["name"] if batch_dict["first_tech_lead"] else None
+        second_name = batch_dict["second_tech_lead"]["name"] if batch_dict["second_tech_lead"] else None
+        
+        if first_name and second_name:
+            batch_dict["tech_leads_display"] = f"{first_name}/{second_name}"
+        elif first_name:
+            batch_dict["tech_leads_display"] = first_name
+        elif second_name:
+            batch_dict["tech_leads_display"] = second_name
+        else:
+            batch_dict["tech_leads_display"] = "Unassigned"
+        
+        return batch_dict
+
     def list_batches(
         self,
         db: Session,
@@ -52,9 +106,10 @@ class BatchService(CRUDService[Batch]):
         search: str | None = None,
         sort_by: str | None = None,
         order: str | None = None,
-    ) -> list[Batch]:
+    ) -> list[dict]:
         """
         List batches with optional filtering by tech lead.
+        Returns enriched batch data with tech lead names.
         
         If tech_lead_id is provided, returns batches where the tech lead is assigned
         as either first_tech_lead_id OR second_tech_lead_id.
@@ -112,7 +167,10 @@ class BatchService(CRUDService[Batch]):
             # Default sorting
             query = query.order_by(Batch.start_date.desc(), Batch.created_at.desc())
         
-        return query.offset(skip).limit(limit).all()
+        batches = query.offset(skip).limit(limit).all()
+        
+        # Enrich with tech lead information using the helper method
+        return [self._enrich_batch_response(db, batch) for batch in batches]
 
     def update_batch(self, db: Session, batch_id: UUID, payload: BatchUpdate) -> Batch:
         updates = payload.model_dump(exclude_unset=True)

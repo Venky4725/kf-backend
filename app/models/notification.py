@@ -24,6 +24,7 @@ class Notification(Base):
     is_broadcast = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    edited_at = Column(DateTime(timezone=True), nullable=True)  # NEW: Track when notification was edited
     
     # Relationships
     sender = relationship("Profile", foreign_keys=[sender_id])

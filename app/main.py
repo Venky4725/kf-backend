@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logger import configure_logging, get_logger
+from app.core.error_handlers import register_error_handlers
 from app.db.session import Base, engine
 from app.routers import (
     attendance,
@@ -59,6 +60,12 @@ app = FastAPI(
 )
 
 # =========================
+# ERROR HANDLERS
+# =========================
+
+register_error_handlers(app)
+
+# =========================
 # ✅ HARD FIX FOR CORS
 # =========================
 
@@ -85,19 +92,6 @@ app.add_middleware(
 @app.get("/api/health", tags=["Health"])
 def health():
     return {"status": "ok"}
-
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi import Request
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"422 Unprocessable Entity: {exc.errors()}")
-    logger.error(f"Body: {await request.body()}")
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors(), "body": str(await request.body())},
-    )
 
 for router in (
     auth.router,

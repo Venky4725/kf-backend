@@ -41,6 +41,13 @@ class BatchUpdate(BaseModel):
         return v
 
 
+class TechLeadInfo(BaseModel):
+    """Tech lead information for batch response"""
+    id: UUID
+    name: str
+    email: str
+
+
 class BatchResponse(BaseModel):
     id: UUID
     name: str
@@ -48,6 +55,11 @@ class BatchResponse(BaseModel):
     start_date: date
     first_tech_lead_id: UUID | None
     second_tech_lead_id: UUID | None
+    # NEW: Include tech lead details for frontend display
+    first_tech_lead: TechLeadInfo | None = None
+    second_tech_lead: TechLeadInfo | None = None
+    # NEW: Computed field for display (e.g., "John/Jane" or "John" or "Unassigned")
+    tech_leads_display: str | None = None
     created_at: datetime
     updated_at: datetime
 

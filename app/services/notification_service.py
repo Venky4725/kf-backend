@@ -174,13 +174,14 @@ class NotificationService(CRUDService[Notification]):
                         "user_id": notification.user_id,
                         "sender_id": notification.sender_id if hasattr(notification, 'sender_id') else None,
                         "sender_name": notification.sender.name if hasattr(notification, 'sender') and notification.sender else None,
-                        "is_sender": is_sender,  # NEW - indicates if current user sent this
+                        "is_sender": is_sender,
                         "title": notification.title,
                         "message": notification.message,
                         "type": notification.type if hasattr(notification, 'type') else None,
                         "is_read": notification.is_read,
                         "is_broadcast": notification.is_broadcast if hasattr(notification, 'is_broadcast') else False,
                         "created_at": notification.created_at,
+                        "edited_at": notification.edited_at if hasattr(notification, 'edited_at') else None,
                     }
                     response.append(notification_dict)
                 
@@ -203,47 +204,105 @@ class NotificationService(CRUDService[Notification]):
         current_user=None,
     ) -> Notification:
         try:
+            from fastapi import HTTPException, status as http_status
+            from datetime import datetime, timezone
+            
+            if not current_user:
+                raise HTTPException(
+                    status_code=http_status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            
             notification = self.get(db, notification_id)
             
-            # Check access - user can update if they are the receiver OR the sender OR an admin
-            if current_user:
-                is_receiver = notification.user_id == current_user.id
-                is_sender = hasattr(notification, 'sender_id') and notification.sender_id == current_user.id
-                is_admin = getattr(current_user, 'role', None) == "ADMIN"
-                
-                if not (is_receiver or is_sender or is_admin):
-                    from fastapi import HTTPException, status as http_status
+            # Build update data from provided fields only
+            update_data = {}
+            
+            # Check if user is trying to edit content (title/message)
+            is_editing_content = payload.title is not None or payload.message is not None
+            
+            if is_editing_content:
+                # Only ADMIN and TECH_LEAD can edit content
+                if current_user.role not in ["ADMIN", "TECHNICAL_LEAD"]:
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
-                        detail="You do not have permission to update this notification"
+                        detail="Only ADMIN and TECH_LEAD can edit notifications"
                     )
+                
+                if payload.title is not None:
+                    update_data["title"] = payload.title.strip()
+                if payload.message is not None:
+                    update_data["message"] = payload.message.strip()
+                
+                # Set edited_at timestamp
+                update_data["edited_at"] = datetime.now(timezone.utc)
             
-            # Extract data to update, excluding unset values for partial update
-            update_data = payload.model_dump(exclude_unset=True)
+            # Anyone can mark their own notifications as read
+            if payload.is_read is not None:
+                if notification.user_id != current_user.id:
+                    raise HTTPException(
+                        status_code=http_status.HTTP_403_FORBIDDEN,
+                        detail="You can only mark your own notifications as read"
+                    )
+                update_data["is_read"] = payload.is_read
             
+            # If no fields to update, return notification as-is
             if not update_data:
                 return notification
-                
+            
             return self.update(db, notification_id, update_data)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error updating notification: {e}")
             raise
 
     def delete(self, db: Session, notification_id: UUID, current_user=None) -> None:
-        """Delete notification - user can only delete their own"""
+        """Delete notification - ADMIN can delete any, TECH_LEAD can delete intern notifications only"""
         try:
-            # Check access - user can only delete their own notifications
-            if current_user:
-                notification = self.get(db, notification_id)
-                if notification.user_id != current_user.id:
-                    from fastapi import HTTPException, status as http_status
+            from fastapi import HTTPException, status as http_status
+            
+            if not current_user:
+                raise HTTPException(
+                    status_code=http_status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            
+            notification = self.get(db, notification_id)
+            
+            # Get the receiver's profile to check their role
+            receiver = db.get(Profile, notification.user_id)
+            if not receiver:
+                raise HTTPException(
+                    status_code=http_status.HTTP_404_NOT_FOUND,
+                    detail="Notification receiver not found"
+                )
+            
+            # ADMIN can delete any notification
+            if current_user.role == "ADMIN":
+                super().delete(db, notification_id)
+                logger.info(f"Notification {notification_id} deleted by ADMIN {current_user.id}")
+                return
+            
+            # TECH_LEAD can only delete notifications sent to INTERNS
+            if current_user.role == "TECHNICAL_LEAD":
+                if receiver.role != "INTERN":
                     raise HTTPException(
                         status_code=http_status.HTTP_403_FORBIDDEN,
-                        detail="You can only delete your own notifications"
+                        detail="Tech leads can only delete notifications sent to interns"
                     )
+                super().delete(db, notification_id)
+                logger.info(f"Notification {notification_id} deleted by TECH_LEAD {current_user.id}")
+                return
             
-            # Call parent delete
-            super().delete(db, notification_id)
+            # INTERN cannot delete any notification
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail="Interns cannot delete notifications"
+            )
+            
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error deleting notification: {e}")
             raise

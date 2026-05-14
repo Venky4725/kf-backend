@@ -27,6 +27,8 @@ def get_batches(
     """
     Get batches with optional filtering.
     
+    Returns enriched batch data including tech lead names for display.
+    
     Query Parameters:
     - tech_lead_id: Filter batches where the tech lead is assigned (first or second)
     
@@ -37,6 +39,8 @@ def get_batches(
     # Tech Lead can only see their assigned batches
     if current_user.role == "TECHNICAL_LEAD":
         tech_lead_id = current_user.id
+    
+    # Service returns list of dicts with enriched data
     return batch_service.list_batches(
         db,
         skip=skip,
@@ -53,7 +57,13 @@ def get_batch(
     batch_id: UUID,
     db: Session = Depends(get_db),
 ):
-    return batch_service.get(db, batch_id)
+    """
+    Get a single batch with enriched tech lead information.
+    Returns the same structure as list endpoint for consistency.
+    """
+    batch = batch_service.get(db, batch_id)
+    # Enrich with tech lead information for consistent response
+    return batch_service._enrich_batch_response(db, batch)
 
 
 @router.post("", response_model=BatchResponse, status_code=status.HTTP_201_CREATED)
@@ -61,7 +71,10 @@ def create_batch(
     payload: BatchCreate,
     db: Session = Depends(get_db),
 ):
-    return batch_service.create_batch(db, payload)
+    """Create a new batch with enriched response."""
+    batch = batch_service.create_batch(db, payload)
+    # Enrich with tech lead information for consistent response
+    return batch_service._enrich_batch_response(db, batch)
 
 
 @router.put("/{batch_id}", response_model=BatchResponse)
@@ -70,7 +83,10 @@ def update_batch(
     payload: BatchUpdate,
     db: Session = Depends(get_db),
 ):
-    return batch_service.update_batch(db, batch_id, payload)
+    """Update a batch with enriched response."""
+    batch = batch_service.update_batch(db, batch_id, payload)
+    # Enrich with tech lead information for consistent response
+    return batch_service._enrich_batch_response(db, batch)
 
 
 @router.delete("/{batch_id}", status_code=status.HTTP_204_NO_CONTENT)
