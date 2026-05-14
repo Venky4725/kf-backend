@@ -113,7 +113,7 @@ class SubmissionService(CRUDService[Submission]):
             # Apply pagination
             submissions = query.offset(skip).limit(limit).all()
             
-            # Add submitted_by_name and batch_name from joined data
+            # Add submitted_by_name, batch_id, and batch_name from joined data
             result = []
             for sub in submissions:
                 try:
@@ -121,6 +121,7 @@ class SubmissionService(CRUDService[Submission]):
                     profile = db.query(Profile).filter(Profile.id == sub.user_id).first()
                     if profile:
                         sub.submitted_by_name = profile.name
+                        sub.batch_id = profile.batch_id
                         # Get batch name if profile has batch
                         if profile.batch_id:
                             batch = db.get(Batch, profile.batch_id)
@@ -129,10 +130,12 @@ class SubmissionService(CRUDService[Submission]):
                             sub.batch_name = None
                     else:
                         sub.submitted_by_name = None
+                        sub.batch_id = None
                         sub.batch_name = None
                 except Exception as e:
                     logger.error(f"Error fetching profile/batch for submission: {e}")
                     sub.submitted_by_name = None
+                    sub.batch_id = None
                     sub.batch_name = None
                 result.append(sub)
             

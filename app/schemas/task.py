@@ -25,7 +25,9 @@ class TaskResponse(BaseModel):
     title: str
     description: str | None
     batch_id: UUID
-    assigned_to: UUID | None = None  # NEW
+    batch_name: str | None = None  # Enriched from Batch table
+    assigned_to: UUID | None = None
+    assigned_to_name: str | None = None  # Enriched from Profile table
     due_date: date | None
     created_at: datetime
     updated_at: datetime

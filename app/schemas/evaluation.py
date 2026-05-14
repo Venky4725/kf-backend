@@ -66,10 +66,14 @@ class EvaluationUpdate(EvaluationUpdateAdmin):
 class EvaluationResponse(BaseModel):
     id: UUID
     intern_id: UUID
+    intern_name: str | None = None  # Enriched from Profile
     reviewed_by: UUID
+    reviewer_name: str | None = None  # Enriched from Profile
     week_number: int
     score: float
     feedback: str | None
+    batch_id: UUID | None = None  # Enriched from intern's Profile
+    batch_name: str | None = None  # Enriched from Batch
     created_at: datetime
     updated_at: datetime
 
@@ -81,9 +85,13 @@ class EvaluationInternResponse(BaseModel):
     """Response schema for interns - excludes score field"""
     id: UUID
     intern_id: UUID
+    intern_name: str | None = None  # Enriched from Profile
     reviewed_by: UUID
+    reviewer_name: str | None = None  # Enriched from Profile
     week_number: int
     feedback: str | None
+    batch_id: UUID | None = None  # Enriched from intern's Profile
+    batch_name: str | None = None  # Enriched from Batch
     created_at: datetime
     updated_at: datetime
 

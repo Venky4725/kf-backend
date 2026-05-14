@@ -23,7 +23,8 @@ class SubmissionResponse(BaseModel):
     created_at: datetime
     # Joined profile data for submitted by name
     submitted_by_name: str | None = None
-    # Joined batch data for batch name (NEW)
+    # Joined batch data
+    batch_id: UUID | None = None
     batch_name: str | None = None
 
     class Config:

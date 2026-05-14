@@ -21,6 +21,30 @@ class TaskService(CRUDService[Task]):
     resource_name = "Task"
     table_name = "tasks"
 
+    def get(self, db: Session, task_id: UUID) -> Task:
+        """Get single task with enriched batch_name and assigned_to_name"""
+        task = super().get(db, task_id)
+        
+        # Enrich with batch_name and assigned_to_name
+        try:
+            if task.batch_id:
+                batch = db.get(Batch, task.batch_id)
+                task.batch_name = batch.name if batch else None
+            else:
+                task.batch_name = None
+            
+            if hasattr(task, 'assigned_to') and task.assigned_to:
+                assignee = db.get(Profile, task.assigned_to)
+                task.assigned_to_name = assignee.name if assignee else None
+            else:
+                task.assigned_to_name = None
+        except Exception as e:
+            logger.error(f"Error enriching task {task_id}: {e}")
+            task.batch_name = None
+            task.assigned_to_name = None
+        
+        return task
+
     def create_task(self, db: Session, payload: TaskCreate, current_user) -> Task:
         try:
             # Validate batch exists
@@ -145,8 +169,30 @@ class TaskService(CRUDService[Task]):
             
             # Execute query with pagination
             try:
-                results = query.offset(skip).limit(limit).all()
-                return results if results else []
+                tasks = query.offset(skip).limit(limit).all()
+                
+                # Enrich with batch_name and assigned_to_name
+                for task in tasks:
+                    try:
+                        # Get batch name
+                        if task.batch_id:
+                            batch = db.get(Batch, task.batch_id)
+                            task.batch_name = batch.name if batch else None
+                        else:
+                            task.batch_name = None
+                        
+                        # Get assigned_to name
+                        if hasattr(task, 'assigned_to') and task.assigned_to:
+                            assignee = db.get(Profile, task.assigned_to)
+                            task.assigned_to_name = assignee.name if assignee else None
+                        else:
+                            task.assigned_to_name = None
+                    except Exception as e:
+                        logger.error(f"Error enriching task {task.id}: {e}")
+                        task.batch_name = None
+                        task.assigned_to_name = None
+                
+                return tasks if tasks else []
             except SQLAlchemyError as e:
                 logger.error(f"Database error executing query: {e}")
                 return []

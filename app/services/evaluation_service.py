@@ -20,6 +20,37 @@ class EvaluationService(CRUDService[Evaluation]):
     resource_name = "Evaluation"
     table_name = "evaluations"
 
+    def get(self, db: Session, evaluation_id: UUID) -> Evaluation:
+        """Get single evaluation with enriched data"""
+        evaluation = super().get(db, evaluation_id)
+        
+        # Enrich with intern_name, reviewer_name, batch_id, and batch_name
+        try:
+            intern = db.get(Profile, evaluation.intern_id)
+            if intern:
+                evaluation.intern_name = intern.name
+                evaluation.batch_id = intern.batch_id
+                if intern.batch_id:
+                    batch = db.get(Batch, intern.batch_id)
+                    evaluation.batch_name = batch.name if batch else None
+                else:
+                    evaluation.batch_name = None
+            else:
+                evaluation.intern_name = None
+                evaluation.batch_id = None
+                evaluation.batch_name = None
+            
+            reviewer = db.get(Profile, evaluation.reviewed_by)
+            evaluation.reviewer_name = reviewer.name if reviewer else None
+        except Exception as e:
+            logger.error(f"Error enriching evaluation {evaluation_id}: {e}")
+            evaluation.intern_name = None
+            evaluation.reviewer_name = None
+            evaluation.batch_id = None
+            evaluation.batch_name = None
+        
+        return evaluation
+
     def create_evaluation(self, db: Session, payload: EvaluationCreate, current_user) -> Evaluation:
         intern = self._get_profile(db, payload.intern_id, "intern")
         reviewer = self._get_profile(db, payload.reviewed_by, "reviewer")
@@ -181,7 +212,37 @@ class EvaluationService(CRUDService[Evaluation]):
                 query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
             
             # Apply pagination
-            return query.offset(skip).limit(limit).all()
+            evaluations = query.offset(skip).limit(limit).all()
+            
+            # Enrich with intern_name, reviewer_name, batch_id, and batch_name
+            for evaluation in evaluations:
+                try:
+                    # Get intern info
+                    intern = db.get(Profile, evaluation.intern_id)
+                    if intern:
+                        evaluation.intern_name = intern.name
+                        evaluation.batch_id = intern.batch_id
+                        if intern.batch_id:
+                            batch = db.get(Batch, intern.batch_id)
+                            evaluation.batch_name = batch.name if batch else None
+                        else:
+                            evaluation.batch_name = None
+                    else:
+                        evaluation.intern_name = None
+                        evaluation.batch_id = None
+                        evaluation.batch_name = None
+                    
+                    # Get reviewer info
+                    reviewer = db.get(Profile, evaluation.reviewed_by)
+                    evaluation.reviewer_name = reviewer.name if reviewer else None
+                except Exception as e:
+                    logger.error(f"Error enriching evaluation {evaluation.id}: {e}")
+                    evaluation.intern_name = None
+                    evaluation.reviewer_name = None
+                    evaluation.batch_id = None
+                    evaluation.batch_name = None
+            
+            return evaluations
         except Exception as e:
             logger.error(f"Error in list_evaluations: {e}")
             # Return empty list instead of crashing
