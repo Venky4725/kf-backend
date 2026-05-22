@@ -1,6 +1,6 @@
 # app/schemas/task.py
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_validator
 from uuid import UUID
 from datetime import date, datetime
 from typing import Literal
@@ -49,20 +49,37 @@ class TaskBulkCreate(BaseModel):
     assigned_to: UUID | None = None
     
     # Legacy fields
-    tasks: list[str] | None = None
+    tasks: list[str | None] | None = None
     due_date: date | None = None
     
     # New fields for Smart Import
     import_mode: Literal["simple", "roadmap"] | None = None
     content: str | None = None
 
+    @field_validator('tasks')
+    @classmethod
+    def validate_tasks(cls, v: list[str | None] | None) -> list[str] | None:
+        if v is None:
+            return None
+        # Ensure all elements are strings and not None
+        return [str(t) for t in v if t is not None]
+
     @model_validator(mode='after')
     def validate_import_fields(self) -> 'TaskBulkCreate':
-        if self.import_mode or self.content:
-            if not self.import_mode or not self.content:
-                raise ValueError("Both 'import_mode' and 'content' must be provided together.")
-        elif not self.tasks:
-            raise ValueError("Either 'tasks' or 'import_mode' + 'content' must be provided.")
+        # If any smart import field is provided, both must be provided
+        if self.import_mode is not None or self.content is not None:
+            if self.import_mode is None:
+                raise ValueError("Missing 'import_mode' for smart import.")
+            if self.content is None:
+                raise ValueError("Missing 'content' for smart import.")
+        
+        # Ensure at least one import method is valid
+        has_tasks = self.tasks is not None and len(self.tasks) > 0
+        has_smart = self.import_mode is not None and self.content is not None
+        
+        if not has_tasks and not has_smart:
+            raise ValueError("No tasks provided. Provide 'tasks' list or 'import_mode' + 'content'.")
+            
         return self
 
 

@@ -22,6 +22,9 @@ def create_tasks_bulk(
     current_user=Depends(get_current_user),
 ):
     try:
+        from fastapi.encoders import jsonable_encoder
+        logger.info(f"Bulk task creation request from {current_user.email if current_user else 'unknown'}: {jsonable_encoder(payload)}")
+        
         if not current_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
