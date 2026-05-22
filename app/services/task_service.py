@@ -108,6 +108,12 @@ class TaskService(CRUDService[Task]):
         """Create multiple tasks in a single transaction."""
         try:
             # 1. Common Validations
+            if not payload.tasks:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Task list cannot be empty"
+                )
+
             self._ensure_batch_exists(db, payload.batch_id)
             
             # Tech Lead permission check
@@ -136,7 +142,10 @@ class TaskService(CRUDService[Task]):
             # 2. Process Task List
             task_titles = [t.strip() for t in payload.tasks if t and t.strip()]
             if not task_titles:
-                return TaskBulkResponse(created=0, failed=0, task_ids=[])
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No valid tasks provided (all lines are empty or whitespace)"
+                )
 
             created_tasks = []
             task_ids = []
@@ -146,10 +155,11 @@ class TaskService(CRUDService[Task]):
                 for title in task_titles:
                     task = Task(
                         title=title,
+                        description=None,
                         batch_id=payload.batch_id,
                         due_date=payload.due_date,
-                        priority=payload.priority or "MEDIUM",
-                        status=payload.status or "OPEN",
+                        priority="LOW",
+                        status="PENDING",
                         assigned_to=payload.assigned_to,
                         created_by=current_user.id if current_user else None
                     )

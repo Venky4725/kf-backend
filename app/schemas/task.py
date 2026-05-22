@@ -47,8 +47,6 @@ class TaskBulkCreate(BaseModel):
     tasks: list[str]
     batch_id: UUID
     due_date: date | None = None
-    priority: str | None = "MEDIUM"
-    status: str | None = "OPEN"
     assigned_to: UUID | None = None
 
 
