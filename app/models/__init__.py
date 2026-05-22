@@ -8,3 +8,4 @@ from .submission import Submission
 from .evaluation import Evaluation
 from .notification import Notification
 from .audit_log import AuditLog
+from .roadmap import WeeklyRoadmap, RoadmapEntry

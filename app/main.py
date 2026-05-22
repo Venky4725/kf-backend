@@ -19,6 +19,7 @@ from app.routers import (
     profiles,
     submissions,
     tasks,
+    roadmaps,
 )
 
 import app.models  # noqa: F401
@@ -147,5 +148,6 @@ for router in (
     submissions.router,
     evaluations.router,
     notifications.router,
+    roadmaps.router,
 ):
     app.include_router(router, prefix="/api")
