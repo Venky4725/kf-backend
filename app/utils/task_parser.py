@@ -49,17 +49,32 @@ def parse_simple_tasks(content: str) -> list[dict[str, Any]]:
 
 def parse_roadmap_tasks(content: str) -> list[dict[str, Any]]:
     """
-    Parses a training roadmap (markdown table or tab-separated).
-    Expected columns: Day & Date | Topic | Activities | Outcome
+    Parses a training roadmap. Supports both tabular and block-based formats.
+    Tabular: Date | Topic | Activities | Outcome
+    Block: 
+        Line 1: Date
+        Line 2: Topic
+        Line 3: Activities
+        Line 4: Outcome
     """
     if not content:
         return []
 
+    # Detect format: if '|' is present in multiple lines, assume tabular
+    lines = content.strip().split('\n')
+    pipe_count = sum(1 for line in lines if '|' in line)
+    
+    if pipe_count > 1:
+        return _parse_roadmap_tabular(content)
+    else:
+        return _parse_roadmap_block(content)
+
+def _parse_roadmap_tabular(content: str) -> list[dict[str, Any]]:
+    """Existing tabular parser logic."""
     lines = content.strip().split('\n')
     tasks = []
     
     # Detect delimiter: | or \t
-    # We'll check the first line that looks like a row
     delimiter = '|'
     if '\t' in lines[0] and '|' not in lines[0]:
         delimiter = '\t'
@@ -94,19 +109,8 @@ def parse_roadmap_tasks(content: str) -> list[dict[str, Any]]:
         activities = columns[2] if len(columns) > 2 else ""
         outcome = columns[3] if len(columns) > 3 else ""
         
-        # Build description
-        desc_parts = []
-        if activities:
-            desc_parts.append(f"Activities:\n{activities}")
-        if outcome:
-            desc_parts.append(f"Expected Outcome:\n{outcome}")
-        
-        description = "\n\n".join(desc_parts) if desc_parts else None
-        
-        # Parse date
-        due_date = None
-        if raw_date:
-            due_date = _try_parse_date(raw_date)
+        description = _build_description(activities, outcome)
+        due_date = _try_parse_date(raw_date)
 
         if title:
             tasks.append({
@@ -116,6 +120,51 @@ def parse_roadmap_tasks(content: str) -> list[dict[str, Any]]:
             })
             
     return tasks
+
+def _parse_roadmap_block(content: str) -> list[dict[str, Any]]:
+    """
+    Parses block-based roadmap.
+    Line 1: Date
+    Line 2: Title
+    Line 3: Activities
+    Line 4: Outcome
+    """
+    # Filter out empty lines to get continuous blocks of data
+    lines = [line.strip() for line in content.split('\n') if line.strip()]
+    tasks = []
+    
+    # Process in chunks of 4
+    for i in range(0, len(lines), 4):
+        chunk = lines[i:i+4]
+        if len(chunk) < 2: # Need at least date and title
+            continue
+            
+        raw_date = chunk[0]
+        title = chunk[1]
+        activities = chunk[2] if len(chunk) > 2 else ""
+        outcome = chunk[3] if len(chunk) > 3 else ""
+        
+        description = _build_description(activities, outcome)
+        due_date = _try_parse_date(raw_date)
+
+        if title:
+            tasks.append({
+                "title": title,
+                "description": description,
+                "due_date": due_date
+            })
+            
+    return tasks
+
+def _build_description(activities: str, outcome: str) -> str | None:
+    """Helper to build description from activities and outcome."""
+    desc_parts = []
+    if activities:
+        desc_parts.append(f"Activities:\n{activities}")
+    if outcome:
+        desc_parts.append(f"Expected Outcome:\n{outcome}")
+    
+    return "\n\n".join(desc_parts) if desc_parts else None
 
 def _try_parse_date(date_str: str) -> date | None:
     """
