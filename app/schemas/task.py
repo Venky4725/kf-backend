@@ -1,8 +1,9 @@
 # app/schemas/task.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from uuid import UUID
 from datetime import date, datetime
+from typing import Literal
 
 
 class TaskCreate(BaseModel):
@@ -44,10 +45,25 @@ class TaskResponse(BaseModel):
 
 
 class TaskBulkCreate(BaseModel):
-    tasks: list[str]
     batch_id: UUID
-    due_date: date | None = None
     assigned_to: UUID | None = None
+    
+    # Legacy fields
+    tasks: list[str] | None = None
+    due_date: date | None = None
+    
+    # New fields for Smart Import
+    import_mode: Literal["simple", "roadmap"] | None = None
+    content: str | None = None
+
+    @model_validator(mode='after')
+    def validate_import_fields(self) -> 'TaskBulkCreate':
+        if self.import_mode or self.content:
+            if not self.import_mode or not self.content:
+                raise ValueError("Both 'import_mode' and 'content' must be provided together.")
+        elif not self.tasks:
+            raise ValueError("Either 'tasks' or 'import_mode' + 'content' must be provided.")
+        return self
 
 
 class TaskBulkResponse(BaseModel):

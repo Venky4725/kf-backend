@@ -12,6 +12,7 @@ from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskUpdate, TaskBulkCreate, TaskBulkResponse
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError
+from app.utils.task_parser import parse_simple_tasks, parse_roadmap_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +109,6 @@ class TaskService(CRUDService[Task]):
         """Create multiple tasks in a single transaction."""
         try:
             # 1. Common Validations
-            if not payload.tasks:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Task list cannot be empty"
-                )
-
             self._ensure_batch_exists(db, payload.batch_id)
             
             # Tech Lead permission check
@@ -139,12 +134,34 @@ class TaskService(CRUDService[Task]):
                         detail="Cannot assign task to inactive user"
                     )
 
-            # 2. Process Task List
-            task_titles = [t.strip() for t in payload.tasks if t and t.strip()]
-            if not task_titles:
+            # 2. Process Task List (Legacy or Smart Import)
+            tasks_to_create = []
+            import_mode = payload.import_mode or "legacy"
+            
+            if payload.import_mode:
+                if payload.import_mode == "simple":
+                    tasks_to_create = parse_simple_tasks(payload.content)
+                elif payload.import_mode == "roadmap":
+                    tasks_to_create = parse_roadmap_tasks(payload.content)
+            else:
+                # Legacy mode (backward compatibility)
+                if not payload.tasks:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Task list cannot be empty"
+                    )
+                for title in payload.tasks:
+                    if title and title.strip():
+                        tasks_to_create.append({
+                            "title": title.strip(),
+                            "description": None,
+                            "due_date": payload.due_date
+                        })
+
+            if not tasks_to_create:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No valid tasks provided (all lines are empty or whitespace)"
+                    detail="No valid tasks found to import"
                 )
 
             created_tasks = []
@@ -152,12 +169,12 @@ class TaskService(CRUDService[Task]):
             
             # Use manual transaction/flush to handle batching
             try:
-                for title in task_titles:
+                for task_data in tasks_to_create:
                     task = Task(
-                        title=title,
-                        description=None,
+                        title=task_data["title"],
+                        description=task_data.get("description"),
                         batch_id=payload.batch_id,
-                        due_date=payload.due_date,
+                        due_date=task_data.get("due_date"),
                         priority="LOW",
                         status="PENDING",
                         assigned_to=payload.assigned_to,
@@ -176,7 +193,10 @@ class TaskService(CRUDService[Task]):
                 
                 db.commit()
                 
-                logger.info(f"Bulk created {len(task_ids)} tasks for batch {payload.batch_id} by {current_user.id if current_user else 'unknown'}")
+                logger.info(
+                    f"Smart Bulk Import (mode={import_mode}) created {len(task_ids)} tasks "
+                    f"for batch {payload.batch_id} by {current_user.id if current_user else 'unknown'}"
+                )
                 
                 return TaskBulkResponse(
                     created=len(task_ids),
