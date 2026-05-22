@@ -50,3 +50,21 @@ class WeeklyRoadmapShortResponse(WeeklyRoadmapBase):
 class RoadmapBulkImportResponse(BaseModel):
     roadmap_id: UUID
     entries_count: int
+    entries: List[RoadmapEntryResponse]
+
+
+# Preview Schemas
+class RoadmapPreviewEntry(BaseModel):
+    day: str
+    topic: str
+    activities: Optional[str] = ""
+    outcome: Optional[str] = ""
+
+
+class RoadmapPreviewRequest(BaseModel):
+    content: str
+
+
+class RoadmapPreviewResponse(BaseModel):
+    entries: List[RoadmapPreviewEntry]
+    entries_count: int

@@ -12,7 +12,9 @@ from app.schemas.roadmap import (
     RoadmapImportRequest, 
     RoadmapBulkImportResponse, 
     WeeklyRoadmapResponse, 
-    WeeklyRoadmapShortResponse
+    WeeklyRoadmapShortResponse,
+    RoadmapPreviewRequest,
+    RoadmapPreviewResponse
 )
 from app.services.roadmap_service import roadmap_service
 
@@ -31,6 +33,23 @@ def import_roadmap(
             detail="Only Admins and Tech Leads can import roadmaps"
         )
     return roadmap_service.import_roadmap(db, payload, current_user.id)
+
+
+@router.post("/preview", response_model=RoadmapPreviewResponse)
+def preview_roadmap(
+    payload: RoadmapPreviewRequest,
+    current_user=Depends(get_current_user),
+):
+    if current_user.role not in ["ADMIN", "TECHNICAL_LEAD"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Admins and Tech Leads can preview roadmaps"
+        )
+    entries = roadmap_service.preview_roadmap(payload.content)
+    return {
+        "entries": entries,
+        "entries_count": len(entries)
+    }
 
 
 @router.get("", response_model=List[WeeklyRoadmapShortResponse])
