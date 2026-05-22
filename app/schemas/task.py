@@ -11,6 +11,8 @@ class TaskCreate(BaseModel):
     batch_id: UUID
     assigned_to: UUID | None = None  # NEW
     due_date: date | None = None
+    priority: str | None = "MEDIUM"
+    status: str | None = "OPEN"
 
 
 class TaskUpdate(BaseModel):
@@ -18,6 +20,8 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     assigned_to: UUID | None = None  # NEW
     due_date: date | None = None
+    priority: str | None = None
+    status: str | None = None
 
 
 class TaskResponse(BaseModel):
@@ -29,8 +33,26 @@ class TaskResponse(BaseModel):
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None  # Enriched from Profile table
     due_date: date | None
+    priority: str | None = "MEDIUM"
+    status: str | None = "OPEN"
+    created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class TaskBulkCreate(BaseModel):
+    tasks: list[str]
+    batch_id: UUID
+    due_date: date | None = None
+    priority: str | None = "MEDIUM"
+    status: str | None = "OPEN"
+    assigned_to: UUID | None = None
+
+
+class TaskBulkResponse(BaseModel):
+    created: int
+    failed: int
+    task_ids: list[UUID]

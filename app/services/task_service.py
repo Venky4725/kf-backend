@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.models.batch import Batch
 from app.models.profile import Profile
 from app.models.task import Task
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.task import TaskCreate, TaskUpdate, TaskBulkCreate, TaskBulkResponse
 from app.services.base import CRUDService
 from app.services.exceptions import ConflictError
 
@@ -79,6 +79,9 @@ class TaskService(CRUDService[Task]):
                 "description": payload.description,
                 "batch_id": payload.batch_id,
                 "due_date": payload.due_date,
+                "priority": payload.priority or "MEDIUM",
+                "status": payload.status or "OPEN",
+                "created_by": current_user.id if current_user else None,
             }
             
             # Add assigned_to if provided (handle missing column gracefully)
@@ -99,6 +102,92 @@ class TaskService(CRUDService[Task]):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create task"
+            )
+
+    def create_tasks_bulk(self, db: Session, payload: TaskBulkCreate, current_user) -> TaskBulkResponse:
+        """Create multiple tasks in a single transaction."""
+        try:
+            # 1. Common Validations
+            self._ensure_batch_exists(db, payload.batch_id)
+            
+            # Tech Lead permission check
+            if current_user.role == "TECHNICAL_LEAD":
+                from app.core.tech_lead_utils import is_tech_lead_for_batch
+                if not is_tech_lead_for_batch(db, current_user.id, payload.batch_id):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Tech Lead can only create tasks for their assigned batches"
+                    )
+            
+            # Validate assigned_to user exists
+            if payload.assigned_to:
+                user = db.get(Profile, payload.assigned_to)
+                if not user:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"User '{payload.assigned_to}' does not exist."
+                    )
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot assign task to inactive user"
+                    )
+
+            # 2. Process Task List
+            task_titles = [t.strip() for t in payload.tasks if t and t.strip()]
+            if not task_titles:
+                return TaskBulkResponse(created=0, failed=0, task_ids=[])
+
+            created_tasks = []
+            task_ids = []
+            
+            # Use manual transaction/flush to handle batching
+            try:
+                for title in task_titles:
+                    task = Task(
+                        title=title,
+                        batch_id=payload.batch_id,
+                        due_date=payload.due_date,
+                        priority=payload.priority or "MEDIUM",
+                        status=payload.status or "OPEN",
+                        assigned_to=payload.assigned_to,
+                        created_by=current_user.id if current_user else None
+                    )
+                    db.add(task)
+                    created_tasks.append(task)
+                
+                db.flush() # Ensure IDs are generated
+                
+                for task in created_tasks:
+                    task_ids.append(task.id)
+                    # Add audit log for each
+                    from app.services.audit import add_audit_log
+                    add_audit_log(db, action="CREATE", table_name=self.table_name, record_id=task.id)
+                
+                db.commit()
+                
+                logger.info(f"Bulk created {len(task_ids)} tasks for batch {payload.batch_id} by {current_user.id if current_user else 'unknown'}")
+                
+                return TaskBulkResponse(
+                    created=len(task_ids),
+                    failed=0,
+                    task_ids=task_ids
+                )
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Error in bulk task creation transaction: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create tasks: {str(e)}"
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in bulk task creation: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unexpected error during bulk task creation"
             )
 
     def list_tasks(

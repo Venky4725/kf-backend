@@ -8,11 +8,34 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
+from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate, TaskBulkCreate, TaskBulkResponse
 from app.services.task_service import task_service
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/bulk", response_model=TaskBulkResponse, status_code=status.HTTP_201_CREATED)
+def create_tasks_bulk(
+    payload: TaskBulkCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    try:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+        return task_service.create_tasks_bulk(db, payload, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in create_tasks_bulk: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create tasks: {str(e)}"
+        )
 
 
 @router.get("", response_model=list[TaskResponse])

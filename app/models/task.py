@@ -17,8 +17,11 @@ class Task(Base):
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)  # NEW
+    created_by = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)
 
     due_date = Column(Date, nullable=True)
+    priority = Column(String, nullable=True, default="MEDIUM")
+    status = Column(String, nullable=True, default="OPEN")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
