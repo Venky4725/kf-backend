@@ -139,23 +139,38 @@ def get_dashboard_trends(
     if not start_date:
         start_date = end_date - timedelta(days=days)
     
-    # Base query
-    query = db.query(
-        Attendance.day,
-        Attendance.status,
-        func.count(Attendance.id).label('count')
-    ).join(Profile, Attendance.user_id == Profile.id)
-    
-    # RBAC: Tech Lead can only see their batches
+    # Determine if we need to join with Profile
+    needs_profile_join = False
     if current_user and current_user.role == "TECHNICAL_LEAD":
-        from app.core.tech_lead_utils import get_tech_lead_batch_filter
-        query = query.join(Batch, Profile.batch_id == Batch.id).filter(
-            get_tech_lead_batch_filter(current_user.id)
+        needs_profile_join = True
+    elif batch_id:
+        needs_profile_join = True
+        
+    # Base query
+    if needs_profile_join:
+        query = db.query(
+            Attendance.day,
+            Attendance.status,
+            func.count(Attendance.id).label('count')
+        ).join(Profile, Attendance.user_id == Profile.id)
+        
+        # RBAC: Tech Lead can only see their batches
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            from app.core.tech_lead_utils import get_tech_lead_batch_filter
+            query = query.join(Batch, Profile.batch_id == Batch.id).filter(
+                get_tech_lead_batch_filter(current_user.id)
+            )
+        
+        # Filter by batch
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+    else:
+        # Optimized path for Admins (no batch filter)
+        query = db.query(
+            Attendance.day,
+            Attendance.status,
+            func.count(Attendance.id).label('count')
         )
-    
-    # Filter by batch
-    if batch_id:
-        query = query.filter(Profile.batch_id == batch_id)
     
     # Filter by date range
     query = query.filter(

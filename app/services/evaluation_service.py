@@ -218,26 +218,36 @@ class EvaluationService(CRUDService[Evaluation]):
             func.avg(Evaluation.score).label("average_score"),
             func.min(Evaluation.score).label("min_score"),
             func.max(Evaluation.score).label("max_score")
-        ).join(Profile, Evaluation.intern_id == Profile.id)
+        )
 
-        # RBAC for TECHNICAL_LEAD
+        # Determine if we need to join with Profile
+        needs_profile_join = False
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            from app.core.tech_lead_utils import get_tech_lead_batch_ids
-            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
-            if tl_batch_ids:
-                query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-            else:
-                return {
-                    "total_evaluations": 0,
-                    "average_score": 0,
-                    "min_score": 0,
-                    "max_score": 0,
-                    "evaluations_by_week": []
-                }
+            needs_profile_join = True
+        elif batch_id:
+            needs_profile_join = True
+            
+        if needs_profile_join:
+            query = query.join(Profile, Evaluation.intern_id == Profile.id)
 
-        # Filter by specific batch
-        if batch_id:
-            query = query.filter(Profile.batch_id == batch_id)
+            # RBAC for TECHNICAL_LEAD
+            if current_user and current_user.role == "TECHNICAL_LEAD":
+                from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids:
+                    query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+                else:
+                    return {
+                        "total_evaluations": 0,
+                        "average_score": 0,
+                        "min_score": 0,
+                        "max_score": 0,
+                        "evaluations_by_week": []
+                    }
+
+            # Filter by specific batch
+            if batch_id:
+                query = query.filter(Profile.batch_id == batch_id)
 
         stats = query.one()
 
@@ -246,14 +256,14 @@ class EvaluationService(CRUDService[Evaluation]):
             Evaluation.week_number,
             func.count(Evaluation.id).label("count"),
             func.avg(Evaluation.score).label("avg_score")
-        ).join(Profile, Evaluation.intern_id == Profile.id)
-
-        if current_user and current_user.role == "TECHNICAL_LEAD":
-            query = query.filter(Profile.batch_id.in_(tl_batch_ids)) # Already handled above but for clarity
-            week_query = week_query.filter(Profile.batch_id.in_(tl_batch_ids))
+        )
         
-        if batch_id:
-            week_query = week_query.filter(Profile.batch_id == batch_id)
+        if needs_profile_join:
+            week_query = week_query.join(Profile, Evaluation.intern_id == Profile.id)
+            if current_user and current_user.role == "TECHNICAL_LEAD":
+                week_query = week_query.filter(Profile.batch_id.in_(tl_batch_ids))
+            if batch_id:
+                week_query = week_query.filter(Profile.batch_id == batch_id)
 
         week_stats = week_query.group_by(Evaluation.week_number).order_by(Evaluation.week_number).all()
 

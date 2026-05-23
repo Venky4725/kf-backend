@@ -51,10 +51,7 @@ class BatchService(CRUDService[Batch]):
         """
         Enrich a single batch with tech lead information.
         Supports up to 3 tech leads with display format: "TL1/TL2/TL3"
-        ALWAYS returns enriched structure for API consistency.
-        
-        Returns dict that will be validated by BatchResponse schema.
-        FastAPI will handle UUID to string serialization automatically.
+        Uses relationships for efficiency.
         """
         tech_lead_names = []
         
@@ -66,58 +63,46 @@ class BatchService(CRUDService[Batch]):
             "start_date": batch.start_date,
             "first_tech_lead_id": batch.first_tech_lead_id,
             "second_tech_lead_id": batch.second_tech_lead_id,
-            "third_tech_lead_id": getattr(batch, 'third_tech_lead_id', None),
+            "third_tech_lead_id": batch.third_tech_lead_id,
             "created_at": batch.created_at,
             "updated_at": batch.updated_at,
             "first_tech_lead": None,
             "second_tech_lead": None,
             "third_tech_lead": None,
-            "technical_lead": None,  # Backward compatibility
+            "technical_lead": None,
             "tech_leads_display": "Unassigned"
         }
         
-        # Get first tech lead info
-        if batch.first_tech_lead_id:
-            first_tl = db.get(Profile, batch.first_tech_lead_id)
-            if first_tl:
-                batch_dict["first_tech_lead"] = {
-                    "id": first_tl.id,
-                    "name": first_tl.name,
-                    "email": first_tl.email
-                }
-                tech_lead_names.append(first_tl.name)
+        # Use relationships instead of manual DB lookups
+        if batch.first_tech_lead:
+            batch_dict["first_tech_lead"] = {
+                "id": batch.first_tech_lead.id,
+                "name": batch.first_tech_lead.name,
+                "email": batch.first_tech_lead.email
+            }
+            tech_lead_names.append(batch.first_tech_lead.name)
         
-        # Get second tech lead info
-        if batch.second_tech_lead_id:
-            second_tl = db.get(Profile, batch.second_tech_lead_id)
-            if second_tl:
-                batch_dict["second_tech_lead"] = {
-                    "id": second_tl.id,
-                    "name": second_tl.name,
-                    "email": second_tl.email
-                }
-                tech_lead_names.append(second_tl.name)
+        if batch.second_tech_lead:
+            batch_dict["second_tech_lead"] = {
+                "id": batch.second_tech_lead.id,
+                "name": batch.second_tech_lead.name,
+                "email": batch.second_tech_lead.email
+            }
+            tech_lead_names.append(batch.second_tech_lead.name)
+            
+        if batch.third_tech_lead:
+            batch_dict["third_tech_lead"] = {
+                "id": batch.third_tech_lead.id,
+                "name": batch.third_tech_lead.name,
+                "email": batch.third_tech_lead.email
+            }
+            tech_lead_names.append(batch.third_tech_lead.name)
         
-        # Get third tech lead info
-        third_tech_lead_id = getattr(batch, 'third_tech_lead_id', None)
-        if third_tech_lead_id:
-            third_tl = db.get(Profile, third_tech_lead_id)
-            if third_tl:
-                batch_dict["third_tech_lead"] = {
-                    "id": third_tl.id,
-                    "name": third_tl.name,
-                    "email": third_tl.email
-                }
-                tech_lead_names.append(third_tl.name)
-        
-        # Build display string
+        # Build display strings
         if tech_lead_names:
             display_string = "/".join(tech_lead_names)
             batch_dict["tech_leads_display"] = display_string
-            batch_dict["technical_lead"] = display_string  # Backward compatibility
-        else:
-            batch_dict["tech_leads_display"] = "Unassigned"
-            batch_dict["technical_lead"] = "Unassigned"  # Backward compatibility
+            batch_dict["technical_lead"] = display_string
         
         return batch_dict
 
@@ -133,15 +118,17 @@ class BatchService(CRUDService[Batch]):
         order: str | None = None,
     ) -> list[dict]:
         """
-        List batches with optional filtering by tech lead.
-        Returns enriched batch data with tech lead names.
-        
-        If tech_lead_id is provided, returns batches where the tech lead is assigned
-        as first_tech_lead_id, second_tech_lead_id, or third_tech_lead_id.
+        List batches with optional filtering and joinedload for tech leads.
         """
         from sqlalchemy import asc, desc
+        from sqlalchemy.orm import joinedload
         
-        query = db.query(Batch)
+        # Optimized query with joinedload for all three tech lead positions
+        query = db.query(Batch).options(
+            joinedload(Batch.first_tech_lead),
+            joinedload(Batch.second_tech_lead),
+            joinedload(Batch.third_tech_lead)
+        )
         
         if tech_lead_id:
             # Find batches where tech lead is assigned as first, second, OR third tech lead

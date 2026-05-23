@@ -463,12 +463,11 @@ class AttendanceService(CRUDService[Attendance]):
     ) -> dict:
         """
         Get attendance distribution (counts by status) for analytics.
-        Returns data suitable for pie charts.
+        Optimized to avoid joins for Admins when batch filtering is not needed.
         """
         import logging
         from sqlalchemy import func
         from app.models.profile import Profile
-        from app.models.batch import Batch
         
         logger = logging.getLogger(__name__)
         
@@ -476,24 +475,34 @@ class AttendanceService(CRUDService[Attendance]):
         query = db.query(
             Attendance.status,
             func.count(Attendance.id).label('count')
-        ).join(Profile, Attendance.user_id == Profile.id)
+        )
         
-        # RBAC: Tech Lead can only see their batches
+        # Determine if we need to join with Profile
+        needs_profile_join = False
+        
+        # RBAC: Tech Lead ALWAYS needs profile join to check batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            # Filter by batches where TL is assigned (any position: first, second, or third)
-            from app.core.tech_lead_utils import get_tech_lead_batch_ids
-            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
-            if tl_batch_ids:
-                query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-            else:
-                # Tech lead has no batches assigned, show nothing
-                query = query.filter(Profile.id == None)
+            needs_profile_join = True
+        elif batch_id:
+            needs_profile_join = True
+            
+        if needs_profile_join:
+            query = query.join(Profile, Attendance.user_id == Profile.id)
+            
+            # RBAC filter
+            if current_user and current_user.role == "TECHNICAL_LEAD":
+                from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids:
+                    query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+                else:
+                    query = query.filter(Profile.id == None)
+            
+            # Batch filter
+            if batch_id:
+                query = query.filter(Profile.batch_id == batch_id)
         
-        # Filter by batch
-        if batch_id:
-            query = query.filter(Profile.batch_id == batch_id)
-        
-        # Filter by date range
+        # Filter by date range (on Attendance table directly)
         if start_date:
             query = query.filter(Attendance.day >= start_date)
         if end_date:
