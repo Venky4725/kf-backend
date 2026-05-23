@@ -144,16 +144,17 @@ class ProfileService(CRUDService[Profile]):
     ) -> list[Profile]:
         from app.models.batch import Batch
         from sqlalchemy import asc, desc
+        from sqlalchemy.orm import joinedload, contains_eager, load_only
         import logging
         
         logger = logging.getLogger(__name__)
         
-        # Log the request
-        if current_user:
-            logger.info(f"list_profiles called by {current_user.id} ({current_user.role})")
-        
-        # Base query
-        query = db.query(Profile)
+        # Base query - exclude password_hash from listings
+        query = db.query(Profile).options(load_only(
+            Profile.id, Profile.name, Profile.email, Profile.role, 
+            Profile.tech_stack, Profile.batch_id, Profile.is_active,
+            Profile.created_at, Profile.updated_at
+        ))
         
         # Optimization: Joinedload batches for Technical Leads to avoid N+1
         if role == "TECHNICAL_LEAD":
@@ -162,7 +163,6 @@ class ProfileService(CRUDService[Profile]):
                 joinedload(Profile.batches_second),
                 joinedload(Profile.batches_third)
             )
-            logger.info("Joinedload batches for Technical Leads")
         
         # Determine if we need to join Batch table for filtering or sorting
         needs_batch_join = (
@@ -172,8 +172,12 @@ class ProfileService(CRUDService[Profile]):
         
         # Apply JOIN if needed (only once)
         if needs_batch_join:
-            query = query.join(Batch, Profile.batch_id == Batch.id)
-            logger.info("Batch table joined")
+            query = query.join(Batch, Profile.batch_id == Batch.id).options(
+                contains_eager(Profile.batch)
+            )
+        else:
+            # Still joinedload batch for others as it's often needed in UI
+            query = query.options(joinedload(Profile.batch))
         
         # RBAC: Tech Lead can only see interns in batches they lead
         if current_user and current_user.role == "TECHNICAL_LEAD":

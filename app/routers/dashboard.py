@@ -19,3 +19,30 @@ def get_dashboard_stats(
     Reduces multiple round-trips to a single call.
     """
     return dashboard_service.get_admin_dashboard_stats(db, current_user)
+
+
+@router.get("/stats/attendance")
+def get_dashboard_attendance_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Fetch only attendance distribution for dashboard."""
+    return dashboard_service.get_attendance_stats(db, current_user)
+
+
+@router.get("/stats/evaluations")
+def get_dashboard_evaluation_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Fetch only evaluation stats for dashboard."""
+    return dashboard_service.get_evaluation_stats(db, current_user)
+
+
+@router.get("/stats/counts")
+def get_dashboard_counts(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Fetch only general counts (active interns, total batches) for dashboard."""
+    return dashboard_service.get_general_counts(db, current_user)

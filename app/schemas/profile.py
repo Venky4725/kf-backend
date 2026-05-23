@@ -69,6 +69,24 @@ class BatchShort(BaseModel):
         from_attributes = True
 
 
+class ProfileListResponse(BaseModel):
+    """Slimmer schema for listing views - excludes heavy auth fields."""
+    id: UUID
+    name: str
+    email: EmailStr
+    role: str
+    tech_stack: Optional[str] = None
+    batch_id: Optional[UUID] = None
+    batch_name: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+    }
+
+
 class ProfileResponse(BaseModel):
     id: UUID
     name: str
@@ -76,6 +94,7 @@ class ProfileResponse(BaseModel):
     role: str
     tech_stack: Optional[str]
     batch_id: Optional[UUID]
+    batch_name: Optional[str] = None  # Added for consistency
     # For Technical Leads: all assigned batches
     batches: list[BatchShort] = Field(default=[], validation_alias="led_batches")
     # Authentication fields

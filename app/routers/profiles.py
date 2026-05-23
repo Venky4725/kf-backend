@@ -11,14 +11,14 @@ from app.core.dependencies import oauth2_scheme
 from app.models.profile import Profile
 from app.models.batch import Batch
 from app.schemas.auth import AdminCreateUserRequest, MessageResponse
-from app.schemas.profile import ProfileCreate, ProfileResponse, ProfileUpdate
+from app.schemas.profile import ProfileCreate, ProfileResponse, ProfileUpdate, ProfileListResponse
 from app.services.auth_service import auth_service
 from app.services.profile_service import profile_service
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 
 
-@router.get("", response_model=list[ProfileResponse])
+@router.get("", response_model=list[ProfileListResponse])
 def get_profiles(
     skip: int = 0,
     limit: int = 100,
@@ -35,9 +35,7 @@ def get_profiles(
 ):
     """
     Get profiles with role-based access control.
-    - ADMIN: Can see all profiles
-    - TECH_LEAD: Can only see interns in batches they lead
-    - INTERN: Can only see their own profile
+    Uses ProfileListResponse to reduce payload size.
     """
     return profile_service.list_profiles(
         db,
@@ -53,6 +51,7 @@ def get_profiles(
         is_active=is_active,
         current_user=current_user,
     )
+
 
 
 @router.get("/{profile_id}", response_model=ProfileResponse)

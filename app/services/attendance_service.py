@@ -171,38 +171,31 @@ class AttendanceService(CRUDService[Attendance]):
     ) -> list[Attendance]:
         import logging
         from sqlalchemy import asc, desc, func
-        from sqlalchemy.orm import joinedload
+        from sqlalchemy.orm import joinedload, contains_eager
         from app.models.profile import Profile
         from app.models.batch import Batch
         
         logger = logging.getLogger(__name__)
         
-        # Log the request
-        if current_user:
-            logger.info(f"list_attendance called by {current_user.id} ({current_user.role})")
-        
-        # Base query with joins and eager loading
+        # Base query with joins and eager loading using contains_eager to leverage the joins
+        # Optimized to load only required columns from Profile and Batch
         query = db.query(Attendance).join(
             Profile, Attendance.user_id == Profile.id
         ).outerjoin(
             Batch, Profile.batch_id == Batch.id
         ).options(
-            # CRITICAL: Use joinedload to populate relationships
-            joinedload(Attendance.profile).joinedload(Profile.batch)
+            contains_eager(Attendance.profile).load_only(Profile.id, Profile.name, Profile.email, Profile.batch_id),
+            contains_eager(Attendance.profile).contains_eager(Profile.batch).load_only(Batch.id, Batch.name)
         )
         
         # RBAC: Tech Lead can only see their batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
-            # Filter by batches where TL is assigned (any position: first, second, or third)
             from app.core.tech_lead_utils import get_tech_lead_batch_ids
             tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
             if tl_batch_ids:
                 query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-                logger.info(f"Tech Lead filter applied: batch_ids={tl_batch_ids}")
             else:
-                # Tech lead has no batches assigned, show nothing
                 query = query.filter(Profile.id == None)
-                logger.info("Tech Lead has no assigned batches, showing no attendance")
         
         # Filter by user_id
         if user_id:
@@ -459,7 +452,8 @@ class AttendanceService(CRUDService[Attendance]):
         batch_id: UUID | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
-        current_user=None
+        current_user=None,
+        tl_batch_ids: list[UUID] | None = None
     ) -> dict:
         """
         Get attendance distribution (counts by status) for analytics.
@@ -491,8 +485,10 @@ class AttendanceService(CRUDService[Attendance]):
             
             # RBAC filter
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                from app.core.tech_lead_utils import get_tech_lead_batch_ids
-                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids is None:
+                    from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                    tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                
                 if tl_batch_ids:
                     query = query.filter(Profile.batch_id.in_(tl_batch_ids))
                 else:

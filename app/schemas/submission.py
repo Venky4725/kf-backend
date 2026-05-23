@@ -29,3 +29,19 @@ class SubmissionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SubmissionSummaryResponse(BaseModel):
+    """Slimmer schema for listing views - truncates or excludes large content."""
+    id: UUID
+    user_id: UUID
+    submitted_for: date
+    content_preview: str | None = None  # Short preview instead of full content
+    created_at: datetime
+    submitted_by_name: str | None = None
+    batch_id: UUID | None = None
+    batch_name: str | None = None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True

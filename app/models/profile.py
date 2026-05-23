@@ -32,6 +32,11 @@ class Profile(Base):
     # Relationship to Batch (bidirectional with back_populates)
     batch = relationship("Batch", foreign_keys=[batch_id], back_populates="profiles", lazy="joined")
     
+    @property
+    def batch_name(self):
+        """Helper property to get batch name safely."""
+        return self.batch.name if self.batch else None
+    
     # Relationship to Evaluations
     evaluations = relationship("Evaluation", foreign_keys="Evaluation.intern_id", back_populates="intern", lazy="select")
 

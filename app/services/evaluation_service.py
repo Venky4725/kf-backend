@@ -101,38 +101,32 @@ class EvaluationService(CRUDService[Evaluation]):
     ) -> list[Evaluation]:
         """
         List evaluations with comprehensive filtering, searching, and sorting.
-        Optimized with joinedload to avoid N+1 queries.
-        
-        RBAC Enforcement:
-        - ADMIN: Can see all evaluations
-        - TECHNICAL_LEAD: Can only see evaluations for interns in their assigned batches
-        - INTERN: Can see their own evaluations (handled at router level)
+        Optimized with contains_eager to leverage explicit joins.
         """
         from sqlalchemy import asc, desc
+        from sqlalchemy.orm import contains_eager
         
         try:
-            # Optimized query with joinedload for Profile and Batch
-            query = db.query(Evaluation).options(
-                joinedload(Evaluation.intern).joinedload(Profile.batch),
-                joinedload(Evaluation.reviewer)
-            ).join(
+            # Optimized query with contains_eager for Profile and Batch
+            # Using load_only to fetch only necessary columns
+            query = db.query(Evaluation).join(
                 Profile, Evaluation.intern_id == Profile.id
             ).outerjoin(
                 Batch, Profile.batch_id == Batch.id
+            ).options(
+                contains_eager(Evaluation.intern).load_only(Profile.id, Profile.name, Profile.batch_id),
+                contains_eager(Evaluation.intern).contains_eager(Profile.batch).load_only(Batch.id, Batch.name),
+                joinedload(Evaluation.reviewer).load_only(Profile.id, Profile.name)
             )
             
             # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                # Tech Lead can only see evaluations for interns in their assigned batches
                 from app.core.tech_lead_utils import get_tech_lead_batch_ids
                 tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
                 if tl_batch_ids:
                     query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-                    logger.info(f"Tech Lead filter applied: batch_ids={tl_batch_ids}")
                 else:
-                    # Tech lead has no batches assigned, show nothing
                     query = query.filter(Profile.id == None)
-                    logger.info("Tech Lead has no assigned batches, showing no evaluations")
             
             # Filter by intern_id
             if intern_id:
@@ -206,7 +200,8 @@ class EvaluationService(CRUDService[Evaluation]):
         db: Session,
         *,
         batch_id: UUID | None = None,
-        current_user=None
+        current_user=None,
+        tl_batch_ids: list[UUID] | None = None
     ) -> dict:
         """
         Get summary statistics for evaluations.
@@ -232,8 +227,10 @@ class EvaluationService(CRUDService[Evaluation]):
 
             # RBAC for TECHNICAL_LEAD
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                from app.core.tech_lead_utils import get_tech_lead_batch_ids
-                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                if tl_batch_ids is None:
+                    from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                    tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+                
                 if tl_batch_ids:
                     query = query.filter(Profile.batch_id.in_(tl_batch_ids))
                 else:

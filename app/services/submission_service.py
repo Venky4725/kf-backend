@@ -57,12 +57,18 @@ class SubmissionService(CRUDService[Submission]):
         order: str | None = None,
         current_user=None,
     ) -> list[Submission]:
+        from sqlalchemy.orm import joinedload
         try:
-            # Start with base query - join with Profile and Batch for complete data
+            # Start with base query - use joinedload to avoid N+1 queries
+            # Optimized to load only required columns from Profile and Batch
             query = (
                 db.query(Submission)
+                .options(
+                    joinedload(Submission.profile).load_only(Profile.id, Profile.name, Profile.batch_id),
+                    joinedload(Submission.profile).joinedload(Profile.batch).load_only(Batch.id, Batch.name)
+                )
                 .join(Profile, Submission.user_id == Profile.id)
-                .outerjoin(Batch, Profile.batch_id == Batch.id)  # LEFT JOIN for batch
+                .outerjoin(Batch, Profile.batch_id == Batch.id)
             )
             
             # CRITICAL: RBAC enforcement for TECHNICAL_LEAD
@@ -88,36 +94,26 @@ class SubmissionService(CRUDService[Submission]):
             if batch_id:
                 query = query.filter(Profile.batch_id == batch_id)
             
-            # Search across multiple fields (intern name and content)
-            # IMPORTANT: Use LIKE '%search%' for partial matching, not just 'search%'
+            # Search across multiple fields
             if search and search.strip():
                 search_term = f"%{search.strip().lower()}%"
-                try:
-                    query = query.filter(
-                        or_(
-                            func.lower(Profile.name).like(search_term),
-                            func.lower(Submission.content).like(search_term)
-                        )
+                query = query.filter(
+                    or_(
+                        func.lower(Profile.name).like(search_term),
+                        func.lower(Submission.content).like(search_term)
                     )
-                except Exception as e:
-                    logger.error(f"Error applying search filter: {e}")
-                    # Continue without search filter
+                )
             
             # Sorting
             VALID_SORT_FIELDS = {"submitted_for", "created_at", "content"}
             if sort_by and sort_by in VALID_SORT_FIELDS:
-                try:
-                    order_func = desc if order and order.lower() == "desc" else asc
-                    if sort_by == "submitted_for":
-                        query = query.order_by(order_func(Submission.submitted_for))
-                    elif sort_by == "created_at":
-                        query = query.order_by(order_func(Submission.created_at))
-                    elif sort_by == "content":
-                        query = query.order_by(order_func(Submission.content))
-                except Exception as e:
-                    logger.error(f"Error applying sort: {e}")
-                    # Continue with default sorting
-                    query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
+                order_func = desc if order and order.lower() == "desc" else asc
+                if sort_by == "submitted_for":
+                    query = query.order_by(order_func(Submission.submitted_for))
+                elif sort_by == "created_at":
+                    query = query.order_by(order_func(Submission.created_at))
+                elif sort_by == "content":
+                    query = query.order_by(order_func(Submission.content))
             else:
                 # Default sorting
                 query = query.order_by(Submission.submitted_for.desc(), Submission.created_at.desc())
@@ -125,36 +121,20 @@ class SubmissionService(CRUDService[Submission]):
             # Apply pagination
             submissions = query.offset(skip).limit(limit).all()
             
-            # Add submitted_by_name, batch_id, and batch_name from joined data
-            result = []
+            # Populate helper attributes from already loaded relationships
             for sub in submissions:
-                try:
-                    # Get profile and batch info
-                    profile = db.query(Profile).filter(Profile.id == sub.user_id).first()
-                    if profile:
-                        sub.submitted_by_name = profile.name
-                        sub.batch_id = profile.batch_id
-                        # Get batch name if profile has batch
-                        if profile.batch_id:
-                            batch = db.get(Batch, profile.batch_id)
-                            sub.batch_name = batch.name if batch else None
-                        else:
-                            sub.batch_name = None
-                    else:
-                        sub.submitted_by_name = None
-                        sub.batch_id = None
-                        sub.batch_name = None
-                except Exception as e:
-                    logger.error(f"Error fetching profile/batch for submission: {e}")
+                if sub.profile:
+                    sub.submitted_by_name = sub.profile.name
+                    sub.batch_id = sub.profile.batch_id
+                    sub.batch_name = sub.profile.batch.name if sub.profile.batch else None
+                else:
                     sub.submitted_by_name = None
                     sub.batch_id = None
                     sub.batch_name = None
-                result.append(sub)
             
-            return result
+            return submissions
         except Exception as e:
             logger.error(f"Error in list_submissions: {e}")
-            # Return empty list instead of crashing
             return []
 
     def update_submission(self, db: Session, submission_id: UUID, payload: SubmissionUpdate, current_user) -> Submission:
