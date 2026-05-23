@@ -477,13 +477,15 @@ class AttendanceService(CRUDService[Attendance]):
         # RBAC: Tech Lead ALWAYS needs profile join to check batches
         if current_user and current_user.role == "TECHNICAL_LEAD":
             needs_profile_join = True
+        elif current_user and current_user.role == "INTERN":
+            needs_profile_join = False # Intern only needs Attendance table for their own ID
         elif batch_id:
             needs_profile_join = True
             
         if needs_profile_join:
             query = query.join(Profile, Attendance.user_id == Profile.id)
             
-            # RBAC filter
+            # RBAC filter for TL
             if current_user and current_user.role == "TECHNICAL_LEAD":
                 if tl_batch_ids is None:
                     from app.core.tech_lead_utils import get_tech_lead_batch_ids
@@ -497,6 +499,10 @@ class AttendanceService(CRUDService[Attendance]):
             # Batch filter
             if batch_id:
                 query = query.filter(Profile.batch_id == batch_id)
+        
+        # Intern filter
+        if current_user and current_user.role == "INTERN":
+            query = query.filter(Attendance.user_id == current_user.id)
         
         # Filter by date range (on Attendance table directly)
         if start_date:

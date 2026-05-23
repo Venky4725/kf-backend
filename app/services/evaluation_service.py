@@ -204,8 +204,7 @@ class EvaluationService(CRUDService[Evaluation]):
         tl_batch_ids: list[UUID] | None = None
     ) -> dict:
         """
-        Get summary statistics for evaluations.
-        Respects RBAC for Tech Leads.
+        Get summary statistics for evaluations with strict role-based filtering.
         """
         # Base query for stats
         query = db.query(
@@ -225,26 +224,30 @@ class EvaluationService(CRUDService[Evaluation]):
         if needs_profile_join:
             query = query.join(Profile, Evaluation.intern_id == Profile.id)
 
-            # RBAC for TECHNICAL_LEAD
+            # RBAC for TECHNICAL_LEAD: filter by batches AND by reviewer if preferred
+            # But the requirement says "evaluations by that TL"
             if current_user and current_user.role == "TECHNICAL_LEAD":
                 if tl_batch_ids is None:
                     from app.core.tech_lead_utils import get_tech_lead_batch_ids
                     tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
                 
-                if tl_batch_ids:
-                    query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-                else:
-                    return {
-                        "total_evaluations": 0,
-                        "average_score": 0,
-                        "min_score": 0,
-                        "max_score": 0,
-                        "evaluations_by_week": []
-                    }
+                # Filter by evaluations performed BY this TL
+                query = query.filter(Evaluation.reviewed_by == current_user.id)
+                
+                if not tl_batch_ids:
+                    return self._get_empty_eval_stats()
 
             # Filter by specific batch
             if batch_id:
                 query = query.filter(Profile.batch_id == batch_id)
+        
+        # RBAC for ADMIN: Only see evaluations performed BY this admin
+        elif current_user and current_user.role == "ADMIN":
+            query = query.filter(Evaluation.reviewed_by == current_user.id)
+            
+        # RBAC for INTERN: Only see evaluations FOR this intern
+        elif current_user and current_user.role == "INTERN":
+            query = query.filter(Evaluation.intern_id == current_user.id)
 
         stats = query.one()
 
@@ -258,12 +261,17 @@ class EvaluationService(CRUDService[Evaluation]):
         if needs_profile_join:
             week_query = week_query.join(Profile, Evaluation.intern_id == Profile.id)
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                week_query = week_query.filter(Profile.batch_id.in_(tl_batch_ids))
+                week_query = week_query.filter(Evaluation.reviewed_by == current_user.id)
             if batch_id:
                 week_query = week_query.filter(Profile.batch_id == batch_id)
+        elif current_user and current_user.role == "ADMIN":
+            week_query = week_query.filter(Evaluation.reviewed_by == current_user.id)
+        elif current_user and current_user.role == "INTERN":
+            week_query = week_query.filter(Evaluation.intern_id == current_user.id)
 
         week_stats = week_query.group_by(Evaluation.week_number).order_by(Evaluation.week_number).all()
 
+        # For Interns, we might want to hide average scores system-wide but show their own
         return {
             "total_evaluations": stats.total_evaluations or 0,
             "average_score": round(float(stats.average_score or 0), 2),
@@ -273,6 +281,15 @@ class EvaluationService(CRUDService[Evaluation]):
                 {"week_number": ws.week_number, "count": ws.count, "avg_score": round(float(ws.avg_score or 0), 2)}
                 for ws in week_stats
             ]
+        }
+
+    def _get_empty_eval_stats(self) -> dict:
+        return {
+            "total_evaluations": 0,
+            "average_score": 0,
+            "min_score": 0,
+            "max_score": 0,
+            "evaluations_by_week": []
         }
 
     def update_evaluation(

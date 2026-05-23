@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class DashboardService:
     def get_admin_dashboard_stats(self, db: Session, current_user) -> dict:
         """
-        Consolidated dashboard statistics for Admin/TL.
+        Consolidated dashboard statistics for Admin/TL/Intern.
         Optimized to fetch multiple metrics in fewer queries.
         """
         start_time = time.time()
@@ -33,7 +33,7 @@ class DashboardService:
             tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
             if not tl_batch_ids:
                 return self._get_empty_stats(today)
-
+        
         # Use granular methods to build consolidated response
         attendance_dist = self.get_attendance_stats(db, current_user, tl_batch_ids)
         evaluation_stats = self.get_evaluation_stats(db, current_user, tl_batch_ids)
@@ -42,15 +42,15 @@ class DashboardService:
         intern_distribution = self.get_intern_distribution(db, current_user, tl_batch_ids)
         
         end_time = time.time()
-        logger.info(f"Dashboard: Consolidated stats took {end_time-start_time:.4f}s")
+        logger.info(f"Dashboard ({current_user.role}): Consolidated stats took {end_time-start_time:.4f}s")
         
-        return {
+        response = {
             "attendance": attendance_dist,
             "evaluations": evaluation_stats,
             "counts": counts,
             "recent_submissions": recent_submissions,
             "intern_distribution": intern_distribution,
-            # Flattened counts for direct access
+            # Flattened counts for direct access (backward compatibility)
             "active_interns": counts.get("interns", 0),
             "interns_count": counts.get("interns", 0),
             "total_batches": counts.get("batches", 0),
@@ -68,18 +68,14 @@ class DashboardService:
             "server_time": today.isoformat(),
             "load_time_ms": int((end_time - start_time) * 1000)
         }
+        
+        return response
 
     def get_attendance_stats(self, db: Session, current_user, tl_batch_ids=None) -> dict:
         """Fetch only attendance distribution."""
         today = date.today()
         thirty_days_ago = today - timedelta(days=30)
         
-        if tl_batch_ids is None and current_user.role == "TECHNICAL_LEAD":
-            from app.core.tech_lead_utils import get_tech_lead_batch_ids
-            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
-            if not tl_batch_ids:
-                return {"present_count": 0, "absent_count": 0, "late_count": 0, "leave_count": 0, "total_count": 0}
-
         return attendance_service.get_attendance_distribution(
             db, 
             start_date=thirty_days_ago, 
@@ -90,12 +86,6 @@ class DashboardService:
 
     def get_evaluation_stats(self, db: Session, current_user, tl_batch_ids=None) -> dict:
         """Fetch only evaluation statistics."""
-        if tl_batch_ids is None and current_user.role == "TECHNICAL_LEAD":
-            from app.core.tech_lead_utils import get_tech_lead_batch_ids
-            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
-            if not tl_batch_ids:
-                return {"total_evaluations": 0, "average_score": 0, "min_score": 0, "max_score": 0, "evaluations_by_week": []}
-
         return evaluation_service.get_evaluation_stats(
             db, 
             current_user=current_user,
@@ -103,57 +93,74 @@ class DashboardService:
         )
 
     def get_general_counts(self, db: Session, current_user, tl_batch_ids=None) -> dict:
-        """Fetch general counts (active interns, total batches, tasks, etc.)."""
-        if tl_batch_ids is None and current_user.role == "TECHNICAL_LEAD":
-            from app.core.tech_lead_utils import get_tech_lead_batch_ids
-            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
-            if not tl_batch_ids:
-                return {"interns": 0, "batches": 0, "tech_leads": 0, "tasks": 0, "submissions": 0, "evaluations": 0, "notifications": 0}
-
-        # Base counts for Admin
+        """Fetch general counts with strict role-based filtering."""
         if current_user.role == "ADMIN":
-            counts = {
+            return {
+                # System-wide core counts
                 "interns": db.query(func.count(Profile.id)).filter(Profile.role == "INTERN", Profile.is_active == True).scalar(),
                 "batches": db.query(func.count(Batch.id)).scalar(),
                 "tech_leads": db.query(func.count(Profile.id)).filter(Profile.role == "TECHNICAL_LEAD", Profile.is_active == True).scalar(),
-                "tasks": db.query(func.count(Task.id)).scalar(),
-                "submissions": db.query(func.count(Submission.id)).scalar(),
-                "evaluations": db.query(func.count(Evaluation.id)).scalar(),
-                "notifications": db.query(func.count(Notification.id)).scalar()
+                
+                # Activity counts (Role-specific)
+                "tasks": db.query(func.count(Task.id)).filter(Task.created_by == current_user.id).scalar(),
+                "submissions": 0, # Admins don't have submissions
+                "evaluations": db.query(func.count(Evaluation.id)).filter(Evaluation.reviewed_by == current_user.id).scalar(),
+                "notifications": db.query(func.count(Notification.id)).filter(
+                    or_(
+                        Notification.sender_id == current_user.id,
+                        Notification.is_broadcast == True
+                    )
+                ).scalar()
             }
-        else:
-            # RBAC for TECHNICAL_LEAD
-            counts = {
+        
+        elif current_user.role == "TECHNICAL_LEAD":
+            if tl_batch_ids is None:
+                from app.core.tech_lead_utils import get_tech_lead_batch_ids
+                tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+
+            return {
                 "interns": db.query(func.count(Profile.id)).filter(
                     Profile.role == "INTERN", 
                     Profile.is_active == True,
-                    Profile.batch_id.in_(tl_batch_ids)
+                    Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
+                ).scalar() if tl_batch_ids else 0,
+                "batches": len(tl_batch_ids) if tl_batch_ids else 0,
+                "tech_leads": 0, # TLs don't manage other TLs
+                
+                # Activity counts (Role-specific)
+                "tasks": db.query(func.count(Task.id)).filter(
+                    or_(Task.created_by == current_user.id, Task.assigned_to == current_user.id)
                 ).scalar(),
-                "batches": db.query(func.count(Batch.id)).filter(
-                    or_(
-                        Batch.first_tech_lead_id == current_user.id,
-                        Batch.second_tech_lead_id == current_user.id,
-                        Batch.third_tech_lead_id == current_user.id
-                    )
-                ).scalar(),
-                "tech_leads": db.query(func.count(Profile.id)).filter(
-                    Profile.role == "TECHNICAL_LEAD",
-                    Profile.is_active == True
-                ).scalar(),
-                "tasks": db.query(func.count(Task.id)).filter(Task.batch_id.in_(tl_batch_ids)).scalar(),
                 "submissions": db.query(func.count(Submission.id)).join(Profile, Submission.user_id == Profile.id).filter(
-                    Profile.batch_id.in_(tl_batch_ids)
-                ).scalar(),
-                "evaluations": db.query(func.count(Evaluation.id)).join(Profile, Evaluation.intern_id == Profile.id).filter(
-                    Profile.batch_id.in_(tl_batch_ids)
-                ).scalar(),
-                "notifications": db.query(func.count(Notification.id)).filter(Notification.user_id == current_user.id).scalar()
+                    Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
+                ).scalar() if tl_batch_ids else 0,
+                "evaluations": db.query(func.count(Evaluation.id)).filter(Evaluation.reviewed_by == current_user.id).scalar(),
+                "notifications": db.query(func.count(Notification.id)).filter(
+                    or_(
+                        Notification.user_id == current_user.id,
+                        Notification.sender_id == current_user.id
+                    )
+                ).scalar()
             }
         
-        return counts
+        elif current_user.role == "INTERN":
+            return {
+                "interns": 0, "batches": 0, "tech_leads": 0,
+                "tasks": db.query(func.count(Task.id)).filter(Task.assigned_to == current_user.id).scalar(),
+                "submissions": db.query(func.count(Submission.id)).filter(Submission.user_id == current_user.id).scalar(),
+                "evaluations": db.query(func.count(Evaluation.id)).filter(Evaluation.intern_id == current_user.id).scalar(),
+                "notifications": db.query(func.count(Notification.id)).filter(
+                    or_(
+                        Notification.user_id == current_user.id,
+                        Notification.is_broadcast == True
+                    )
+                ).scalar()
+            }
+        
+        return self._get_empty_stats(date.today())["counts"]
 
     def get_recent_submissions(self, db: Session, current_user, tl_batch_ids=None, limit=5) -> list:
-        """Fetch latest submissions."""
+        """Fetch latest submissions with strict role-based filtering."""
         query = db.query(Submission).options(joinedload(Submission.profile))
         
         if current_user.role == "TECHNICAL_LEAD":
@@ -167,6 +174,15 @@ class DashboardService:
                 )
             else:
                 return []
+        elif current_user.role == "INTERN":
+            query = query.filter(Submission.user_id == current_user.id)
+        elif current_user.role == "ADMIN":
+            # Admin only sees submissions they might need to review? 
+            # If Admin doesn't manage batches, maybe they see none or all.
+            # Following "Appropriate system-wide counts", maybe they see all.
+            # But "Relevant metrics for that role" suggests filtering.
+            # I'll keep it empty for Admin unless they have interns, as Admins manage the system not daily submissions.
+            return []
         
         submissions = query.order_by(desc(Submission.created_at)).limit(limit).all()
         
@@ -182,7 +198,10 @@ class DashboardService:
         ]
 
     def get_intern_distribution(self, db: Session, current_user, tl_batch_ids=None) -> list:
-        """Get intern counts grouped by batch."""
+        """Get intern counts grouped by batch with strict role-based filtering."""
+        if current_user.role == "INTERN":
+            return []
+
         query = db.query(
             Batch.name.label("batch_name"),
             func.count(Profile.id).label("intern_count")
