@@ -132,7 +132,7 @@ def export_evaluations(
                 eval.week_number,
                 eval.score,
                 eval.feedback or "",
-                eval.created_at.strftime("%Y-%m-%d %H:%M:%S") if eval.created_at else ""
+                eval.created_at.strftime("%d-%m-%Y") if eval.created_at else ""
             ])
         
         # Prepare response
