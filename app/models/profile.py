@@ -34,3 +34,28 @@ class Profile(Base):
     
     # Relationship to Evaluations
     evaluations = relationship("Evaluation", foreign_keys="Evaluation.intern_id", back_populates="intern", lazy="select")
+
+    # Relationships for Technical Leads (Three possible assignment positions in Batch table)
+    batches_first = relationship("Batch", foreign_keys="[Batch.first_tech_lead_id]", lazy="select")
+    batches_second = relationship("Batch", foreign_keys="[Batch.second_tech_lead_id]", lazy="select")
+    batches_third = relationship("Batch", foreign_keys="[Batch.third_tech_lead_id]", lazy="select")
+
+    @property
+    def led_batches(self):
+        """Returns all batches where this profile is assigned as a technical lead."""
+        all_led = []
+        if self.batches_first:
+            all_led.extend(self.batches_first)
+        if self.batches_second:
+            all_led.extend(self.batches_second)
+        if self.batches_third:
+            all_led.extend(self.batches_third)
+            
+        # Unique batches only
+        seen_ids = set()
+        unique_led = []
+        for b in all_led:
+            if b.id not in seen_ids:
+                unique_led.append(b)
+                seen_ids.add(b.id)
+        return unique_led

@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
 
@@ -155,7 +155,16 @@ class ProfileService(CRUDService[Profile]):
         # Base query
         query = db.query(Profile)
         
-        # Determine if we need to join Batch table
+        # Optimization: Joinedload batches for Technical Leads to avoid N+1
+        if role == "TECHNICAL_LEAD":
+            query = query.options(
+                joinedload(Profile.batches_first),
+                joinedload(Profile.batches_second),
+                joinedload(Profile.batches_third)
+            )
+            logger.info("Joinedload batches for Technical Leads")
+        
+        # Determine if we need to join Batch table for filtering or sorting
         needs_batch_join = (
             (current_user and current_user.role == "TECHNICAL_LEAD") or
             (sort_by and sort_by.lower() == "batch")

@@ -59,6 +59,15 @@ class ProfileUpdate(BaseModel):
     batch_id: Optional[UUID] = None
 
 
+class BatchShort(BaseModel):
+    """Short batch information for technical lead assignment display"""
+    id: UUID
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
 class ProfileResponse(BaseModel):
     id: UUID
     name: str
@@ -66,6 +75,8 @@ class ProfileResponse(BaseModel):
     role: str
     tech_stack: Optional[str]
     batch_id: Optional[UUID]
+    # For Technical Leads: all assigned batches
+    batches: list[BatchShort] = Field(default=[], validation_alias="led_batches")
     # Authentication fields
     must_change_password: bool
     is_active: bool
@@ -77,4 +88,5 @@ class ProfileResponse(BaseModel):
 
     model_config = {
         "from_attributes": True,
+        "populate_by_name": True,
     }
