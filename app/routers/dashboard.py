@@ -46,3 +46,21 @@ def get_dashboard_counts(
 ):
     """Fetch only general counts (active interns, total batches) for dashboard."""
     return dashboard_service.get_general_counts(db, current_user)
+
+
+@router.get("/stats/recent-submissions")
+def get_dashboard_recent_submissions(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Fetch recent submissions for dashboard."""
+    return dashboard_service.get_recent_submissions(db, current_user)
+
+
+@router.get("/stats/intern-distribution")
+def get_dashboard_intern_distribution(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Fetch intern distribution by batch for dashboard."""
+    return dashboard_service.get_intern_distribution(db, current_user)
