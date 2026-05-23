@@ -16,7 +16,7 @@ class Profile(Base):
     role = Column(String, nullable=False)
     tech_stack = Column(String, nullable=True)
 
-    batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=True)
+    batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=True, index=True)
 
     # Authentication fields - use Text for bcrypt hash (60 chars)
     password_hash = Column(Text, nullable=True)
@@ -31,3 +31,6 @@ class Profile(Base):
     
     # Relationship to Batch (bidirectional with back_populates)
     batch = relationship("Batch", foreign_keys=[batch_id], back_populates="profiles", lazy="joined")
+    
+    # Relationship to Evaluations
+    evaluations = relationship("Evaluation", foreign_keys="Evaluation.intern_id", back_populates="intern", lazy="select")

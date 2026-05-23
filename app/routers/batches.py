@@ -52,6 +52,30 @@ def get_batches(
     )
 
 
+@router.get("/available-for-evaluations", response_model=list[BatchResponse])
+def get_available_batches_for_evaluations(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Get distinct batches available for evaluations dropdown.
+    - Admin: All batches
+    - Tech Lead: Only assigned batches
+    """
+    tech_lead_id = None
+    if current_user.role == "TECHNICAL_LEAD":
+        tech_lead_id = current_user.id
+    
+    # Use list_batches with high limit to get all relevant batches
+    return batch_service.list_batches(
+        db,
+        limit=500,  # High limit to ensure all batches are returned for dropdown
+        tech_lead_id=tech_lead_id,
+        sort_by="name",
+        order="asc"
+    )
+
+
 @router.get("/{batch_id}", response_model=BatchResponse)
 def get_batch(
     batch_id: UUID,

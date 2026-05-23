@@ -2,7 +2,7 @@ from uuid import UUID
 import logging
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 
 from app.models.batch import Batch
@@ -21,33 +21,23 @@ class EvaluationService(CRUDService[Evaluation]):
     table_name = "evaluations"
 
     def get(self, db: Session, evaluation_id: UUID) -> Evaluation:
-        """Get single evaluation with enriched data"""
-        evaluation = super().get(db, evaluation_id)
+        """Get single evaluation with enriched data optimized with joinedload"""
+        evaluation = db.query(Evaluation).options(
+            joinedload(Evaluation.intern).joinedload(Profile.batch),
+            joinedload(Evaluation.reviewer)
+        ).filter(Evaluation.id == evaluation_id).first()
         
-        # Enrich with intern_name, reviewer_name, batch_id, and batch_name
-        try:
-            intern = db.get(Profile, evaluation.intern_id)
-            if intern:
-                evaluation.intern_name = intern.name
-                evaluation.batch_id = intern.batch_id
-                if intern.batch_id:
-                    batch = db.get(Batch, intern.batch_id)
-                    evaluation.batch_name = batch.name if batch else None
-                else:
-                    evaluation.batch_name = None
-            else:
-                evaluation.intern_name = None
-                evaluation.batch_id = None
-                evaluation.batch_name = None
-            
-            reviewer = db.get(Profile, evaluation.reviewed_by)
-            evaluation.reviewer_name = reviewer.name if reviewer else None
-        except Exception as e:
-            logger.error(f"Error enriching evaluation {evaluation_id}: {e}")
-            evaluation.intern_name = None
-            evaluation.reviewer_name = None
-            evaluation.batch_id = None
-            evaluation.batch_name = None
+        if not evaluation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Evaluation with ID {evaluation_id} not found"
+            )
+        
+        # Enrich with names from joined data
+        evaluation.intern_name = evaluation.intern.name if evaluation.intern else None
+        evaluation.batch_id = evaluation.intern.batch_id if evaluation.intern else None
+        evaluation.batch_name = evaluation.intern.batch.name if evaluation.intern and evaluation.intern.batch else None
+        evaluation.reviewer_name = evaluation.reviewer.name if evaluation.reviewer else None
         
         return evaluation
 
@@ -111,6 +101,7 @@ class EvaluationService(CRUDService[Evaluation]):
     ) -> list[Evaluation]:
         """
         List evaluations with comprehensive filtering, searching, and sorting.
+        Optimized with joinedload to avoid N+1 queries.
         
         RBAC Enforcement:
         - ADMIN: Can see all evaluations
@@ -120,9 +111,11 @@ class EvaluationService(CRUDService[Evaluation]):
         from sqlalchemy import asc, desc
         
         try:
-            # Start with base query - join with Profile for search on intern name
-            # Also join with Batch for TECHNICAL_LEAD filtering
-            query = db.query(Evaluation).join(
+            # Optimized query with joinedload for Profile and Batch
+            query = db.query(Evaluation).options(
+                joinedload(Evaluation.intern).joinedload(Profile.batch),
+                joinedload(Evaluation.reviewer)
+            ).join(
                 Profile, Evaluation.intern_id == Profile.id
             ).outerjoin(
                 Batch, Profile.batch_id == Batch.id
@@ -159,54 +152,36 @@ class EvaluationService(CRUDService[Evaluation]):
             
             # Filter by score range
             if score_min is not None:
-                # Validate score_min
-                if score_min < 0 or score_min > 5:
-                    logger.warning(f"Invalid score_min: {score_min}, ignoring filter")
-                else:
-                    query = query.filter(Evaluation.score >= score_min)
+                query = query.filter(Evaluation.score >= score_min)
             
             if score_max is not None:
-                # Validate score_max
-                if score_max < 0 or score_max > 5:
-                    logger.warning(f"Invalid score_max: {score_max}, ignoring filter")
-                else:
-                    query = query.filter(Evaluation.score <= score_max)
+                query = query.filter(Evaluation.score <= score_max)
             
             # Search across multiple fields (intern name and feedback)
-            # IMPORTANT: Use LIKE '%search%' for partial matching
             if search and search.strip():
                 search_term = f"%{search.strip().lower()}%"
-                try:
-                    # Search in intern name and feedback
-                    search_conditions = [func.lower(Profile.name).like(search_term)]
-                    
-                    # Only search feedback if it's not NULL
-                    search_conditions.append(func.lower(Evaluation.feedback).like(search_term))
-                    
-                    query = query.filter(or_(*search_conditions))
-                except Exception as e:
-                    logger.error(f"Error applying search filter: {e}")
-                    # Continue without search filter
+                search_conditions = [
+                    func.lower(Profile.name).like(search_term),
+                    func.lower(Evaluation.feedback).like(search_term)
+                ]
+                query = query.filter(or_(*search_conditions))
             
             # Sorting
-            VALID_SORT_FIELDS = {"week_number", "score", "created_at", "updated_at", "intern_name"}
+            VALID_SORT_FIELDS = {"week_number", "score", "created_at", "updated_at", "intern_name", "batch_name", "batch"}
             if sort_by and sort_by in VALID_SORT_FIELDS:
-                try:
-                    order_func = desc if order and order.lower() == "desc" else asc
-                    if sort_by == "week_number":
-                        query = query.order_by(order_func(Evaluation.week_number))
-                    elif sort_by == "score":
-                        query = query.order_by(order_func(Evaluation.score))
-                    elif sort_by == "created_at":
-                        query = query.order_by(order_func(Evaluation.created_at))
-                    elif sort_by == "updated_at":
-                        query = query.order_by(order_func(Evaluation.updated_at))
-                    elif sort_by == "intern_name":
-                        query = query.order_by(order_func(Profile.name))
-                except Exception as e:
-                    logger.error(f"Error applying sort: {e}")
-                    # Continue with default sorting
-                    query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
+                order_func = desc if order and order.lower() == "desc" else asc
+                if sort_by == "week_number":
+                    query = query.order_by(order_func(Evaluation.week_number))
+                elif sort_by == "score":
+                    query = query.order_by(order_func(Evaluation.score))
+                elif sort_by == "created_at":
+                    query = query.order_by(order_func(Evaluation.created_at))
+                elif sort_by == "updated_at":
+                    query = query.order_by(order_func(Evaluation.updated_at))
+                elif sort_by == "intern_name":
+                    query = query.order_by(order_func(Profile.name))
+                elif sort_by in ["batch_name", "batch"]:
+                    query = query.order_by(order_func(Batch.name))
             else:
                 # Default sorting
                 query = query.order_by(Evaluation.week_number.desc(), Evaluation.created_at.desc())
@@ -214,39 +189,84 @@ class EvaluationService(CRUDService[Evaluation]):
             # Apply pagination
             evaluations = query.offset(skip).limit(limit).all()
             
-            # Enrich with intern_name, reviewer_name, batch_id, and batch_name
+            # Enrich with intern_name, reviewer_name, batch_id, and batch_name from joined data
             for evaluation in evaluations:
-                try:
-                    # Get intern info
-                    intern = db.get(Profile, evaluation.intern_id)
-                    if intern:
-                        evaluation.intern_name = intern.name
-                        evaluation.batch_id = intern.batch_id
-                        if intern.batch_id:
-                            batch = db.get(Batch, intern.batch_id)
-                            evaluation.batch_name = batch.name if batch else None
-                        else:
-                            evaluation.batch_name = None
-                    else:
-                        evaluation.intern_name = None
-                        evaluation.batch_id = None
-                        evaluation.batch_name = None
-                    
-                    # Get reviewer info
-                    reviewer = db.get(Profile, evaluation.reviewed_by)
-                    evaluation.reviewer_name = reviewer.name if reviewer else None
-                except Exception as e:
-                    logger.error(f"Error enriching evaluation {evaluation.id}: {e}")
-                    evaluation.intern_name = None
-                    evaluation.reviewer_name = None
-                    evaluation.batch_id = None
-                    evaluation.batch_name = None
+                evaluation.intern_name = evaluation.intern.name if evaluation.intern else None
+                evaluation.batch_id = evaluation.intern.batch_id if evaluation.intern else None
+                evaluation.batch_name = evaluation.intern.batch.name if evaluation.intern and evaluation.intern.batch else None
+                evaluation.reviewer_name = evaluation.reviewer.name if evaluation.reviewer else None
             
             return evaluations
         except Exception as e:
             logger.error(f"Error in list_evaluations: {e}")
-            # Return empty list instead of crashing
             return []
+
+    def get_evaluation_stats(
+        self,
+        db: Session,
+        *,
+        batch_id: UUID | None = None,
+        current_user=None
+    ) -> dict:
+        """
+        Get summary statistics for evaluations.
+        Respects RBAC for Tech Leads.
+        """
+        # Base query for stats
+        query = db.query(
+            func.count(Evaluation.id).label("total_evaluations"),
+            func.avg(Evaluation.score).label("average_score"),
+            func.min(Evaluation.score).label("min_score"),
+            func.max(Evaluation.score).label("max_score")
+        ).join(Profile, Evaluation.intern_id == Profile.id)
+
+        # RBAC for TECHNICAL_LEAD
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            from app.core.tech_lead_utils import get_tech_lead_batch_ids
+            tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+            if tl_batch_ids:
+                query = query.filter(Profile.batch_id.in_(tl_batch_ids))
+            else:
+                return {
+                    "total_evaluations": 0,
+                    "average_score": 0,
+                    "min_score": 0,
+                    "max_score": 0,
+                    "evaluations_by_week": []
+                }
+
+        # Filter by specific batch
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+
+        stats = query.one()
+
+        # Get evaluations by week for trend chart
+        week_query = db.query(
+            Evaluation.week_number,
+            func.count(Evaluation.id).label("count"),
+            func.avg(Evaluation.score).label("avg_score")
+        ).join(Profile, Evaluation.intern_id == Profile.id)
+
+        if current_user and current_user.role == "TECHNICAL_LEAD":
+            query = query.filter(Profile.batch_id.in_(tl_batch_ids)) # Already handled above but for clarity
+            week_query = week_query.filter(Profile.batch_id.in_(tl_batch_ids))
+        
+        if batch_id:
+            week_query = week_query.filter(Profile.batch_id == batch_id)
+
+        week_stats = week_query.group_by(Evaluation.week_number).order_by(Evaluation.week_number).all()
+
+        return {
+            "total_evaluations": stats.total_evaluations or 0,
+            "average_score": round(float(stats.average_score or 0), 2),
+            "min_score": float(stats.min_score or 0),
+            "max_score": float(stats.max_score or 0),
+            "evaluations_by_week": [
+                {"week_number": ws.week_number, "count": ws.count, "avg_score": round(float(ws.avg_score or 0), 2)}
+                for ws in week_stats
+            ]
+        }
 
     def update_evaluation(
         self, 

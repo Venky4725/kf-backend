@@ -26,18 +26,13 @@ def export_evaluations(
     intern_ids: str | None = None,
     week_numbers: str | None = None,
     batch_ids: str | None = None,
+    batch_id: UUID | None = None,  # Added singular batch_id support
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """
     Export evaluations as CSV with filtering.
-    - Tech Leads: All evaluations from their assigned batches (batch-based access)
-    - Admins: All evaluations
-    
-    Query params:
-    - intern_ids: Comma-separated UUIDs (e.g., "uuid1,uuid2")
-    - week_numbers: Comma-separated integers (e.g., "1,2,3")
-    - batch_ids: Comma-separated UUIDs (e.g., "uuid1,uuid2")
+    Optimized with joinedload to avoid N+1 queries.
     """
     import csv
     import logging
@@ -46,29 +41,43 @@ def export_evaluations(
     from app.models.evaluation import Evaluation
     from app.models.profile import Profile
     from app.models.batch import Batch
+    from sqlalchemy.orm import joinedload
     
     logger = logging.getLogger(__name__)
     logger.info(f"CSV export initiated by user: {current_user.id} ({current_user.role})")
     
     try:
-        # Base query with joins
-        query = db.query(Evaluation).join(
+        # Optimized query with joins and joinedload
+        query = db.query(Evaluation).options(
+            joinedload(Evaluation.intern).joinedload(Profile.batch)
+        ).join(
             Profile, Evaluation.intern_id == Profile.id
         ).outerjoin(
             Batch, Profile.batch_id == Batch.id
         )
         
-        # CRITICAL: Tech Lead can export ALL evaluations from their assigned batches (batch-based access)
+        # RBAC for TECHNICAL_LEAD
         if current_user.role == "TECHNICAL_LEAD":
             from app.core.tech_lead_utils import get_tech_lead_batch_ids
             tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
             if tl_batch_ids:
                 query = query.filter(Profile.batch_id.in_(tl_batch_ids))
-                logger.info(f"Tech Lead filter applied: batch_ids={tl_batch_ids}")
             else:
-                # Tech lead has no batches assigned, export nothing
                 query = query.filter(Profile.id == None)
-                logger.info("Tech Lead has no assigned batches, exporting no evaluations")
+        
+        # Apply batch_id (singular) filter
+        if batch_id:
+            query = query.filter(Profile.batch_id == batch_id)
+            logger.info(f"Filtered by batch_id: {batch_id}")
+
+        # Apply batch_ids (plural) filter
+        if batch_ids and batch_ids.strip():
+            try:
+                batch_uuid_list = [UUID(id.strip()) for id in batch_ids.split(",") if id.strip()]
+                if batch_uuid_list:
+                    query = query.filter(Profile.batch_id.in_(batch_uuid_list))
+            except ValueError:
+                pass
         
         # Apply intern_ids filter
         if intern_ids and intern_ids.strip():
@@ -76,10 +85,8 @@ def export_evaluations(
                 intern_uuid_list = [UUID(id.strip()) for id in intern_ids.split(",") if id.strip()]
                 if intern_uuid_list:
                     query = query.filter(Evaluation.intern_id.in_(intern_uuid_list))
-                    logger.info(f"Filtered by intern_ids: {len(intern_uuid_list)} interns")
-            except ValueError as e:
-                logger.warning(f"Invalid intern_ids format: {e}")
-                # Continue without this filter
+            except ValueError:
+                pass
         
         # Apply week_numbers filter
         if week_numbers and week_numbers.strip():
@@ -87,24 +94,16 @@ def export_evaluations(
                 week_list = [int(w.strip()) for w in week_numbers.split(",") if w.strip()]
                 if week_list:
                     query = query.filter(Evaluation.week_number.in_(week_list))
-                    logger.info(f"Filtered by week_numbers: {week_list}")
-            except ValueError as e:
-                logger.warning(f"Invalid week_numbers format: {e}")
-                # Continue without this filter
+            except ValueError:
+                pass
         
-        # Apply batch_ids filter
-        if batch_ids and batch_ids.strip():
-            try:
-                batch_uuid_list = [UUID(id.strip()) for id in batch_ids.split(",") if id.strip()]
-                if batch_uuid_list:
-                    query = query.filter(Profile.batch_id.in_(batch_uuid_list))
-                    logger.info(f"Filtered by batch_ids: {len(batch_uuid_list)} batches")
-            except ValueError as e:
-                logger.warning(f"Invalid batch_ids format: {e}")
-                # Continue without this filter
-        
-        # Order by week and date
-        query = query.order_by(Evaluation.week_number.asc(), Evaluation.created_at.desc())
+        # Order by Batch name, Intern name, then week and date
+        query = query.order_by(
+            Batch.name.asc(),
+            Profile.name.asc(),
+            Evaluation.week_number.asc(),
+            Evaluation.created_at.desc()
+        )
         
         # Execute query
         evaluations = query.all()
@@ -114,50 +113,34 @@ def export_evaluations(
         output = StringIO()
         writer = csv.writer(output)
         
-        # Write header
+        # Write header exactly as requested
         writer.writerow([
             "Intern Name",
-            "Intern Email",
-            "Batch",
+            "Batch Name",
             "Week Number",
             "Score",
             "Feedback",
-            "Reviewed By",
-            "Date"
+            "Evaluation Date"
         ])
         
         # Write data rows
-        for evaluation in evaluations:
-            # Get intern profile
-            intern = db.get(Profile, evaluation.intern_id)
-            reviewer = db.get(Profile, evaluation.reviewed_by)
-            
-            # Get batch name (handle null batch)
-            batch_name = ""
-            if intern and intern.batch_id:
-                batch = db.get(Batch, intern.batch_id)
-                batch_name = batch.name if batch else ""
-            
+        for eval in evaluations:
+            batch_name = eval.intern.batch.name if eval.intern and eval.intern.batch else "Unassigned"
             writer.writerow([
-                intern.name if intern else "Unknown",
-                intern.email if intern else "",
+                eval.intern.name if eval.intern else "Unknown",
                 batch_name,
-                evaluation.week_number,
-                evaluation.score,
-                evaluation.feedback or "",
-                reviewer.name if reviewer else "Unknown",
-                evaluation.created_at.strftime("%Y-%m-%d %H:%M:%S") if evaluation.created_at else ""
+                eval.week_number,
+                eval.score,
+                eval.feedback or "",
+                eval.created_at.strftime("%Y-%m-%d %H:%M:%S") if eval.created_at else ""
             ])
         
         # Prepare response
         output.seek(0)
         
-        # Generate filename with timestamp
         from datetime import datetime
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         filename = f"evaluations_export_{timestamp}.csv"
-        
-        logger.info(f"CSV export complete: {len(evaluations)} rows")
         
         return StreamingResponse(
             iter([output.getvalue()]),
@@ -173,6 +156,24 @@ def export_evaluations(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export evaluations: {str(e)}"
         )
+
+
+@router.get("/dashboard/stats")
+def get_evaluation_stats(
+    batch_id: UUID | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Get summary statistics for evaluations.
+    Query params:
+    - batch_id: Filter by specific batch
+    """
+    return evaluation_service.get_evaluation_stats(
+        db,
+        batch_id=batch_id,
+        current_user=current_user
+    )
 
 
 @router.get("", response_model=Union[list[EvaluationResponse], list[EvaluationInternResponse]])
