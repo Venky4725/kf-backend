@@ -57,6 +57,7 @@ class ProfileUpdate(BaseModel):
     email: Optional[EmailStr] = None
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = None
+    batch_ids: Optional[list[UUID]] = None
 
 
 class BatchShort(BaseModel):

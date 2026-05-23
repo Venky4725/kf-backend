@@ -349,7 +349,7 @@ class ProfileService(CRUDService[Profile]):
             updates["name"] = updates["name"].strip()
             logger.info(f"Normalized name: '{original_name}' -> '{updates['name']}'")
         
-        # Handle email update with uniqueness check
+        # Normalize email
         if "email" in updates and updates["email"] is not None:
             normalized_email = updates["email"].lower().strip()
             logger.info(f"Normalizing email: '{updates['email']}' -> '{normalized_email}'")
@@ -373,6 +373,40 @@ class ProfileService(CRUDService[Profile]):
             
             updates["email"] = normalized_email
         
+        # CRITICAL: Fix Technical Lead batch synchronization
+        # If batch_ids is provided for a TECHNICAL_LEAD, we must SYNC the assignments
+        batch_ids_to_sync = updates.pop("batch_ids", None)
+        
+        if existing_profile.role == "TECHNICAL_LEAD" and batch_ids_to_sync is not None:
+            from app.models.batch import Batch
+            logger.info(f"Synchronizing batches for Technical Lead {profile_id}. New selection: {batch_ids_to_sync}")
+            
+            # 1. Remove TL from ALL current batches (reset all three slots)
+            db.query(Batch).filter(Batch.first_tech_lead_id == profile_id).update({"first_tech_lead_id": None})
+            db.query(Batch).filter(Batch.second_tech_lead_id == profile_id).update({"second_tech_lead_id": None})
+            db.query(Batch).filter(Batch.third_tech_lead_id == profile_id).update({"third_tech_lead_id": None})
+            db.flush()
+            
+            # 2. Assign to new batches
+            for b_id in batch_ids_to_sync:
+                batch = db.get(Batch, b_id)
+                if not batch:
+                    logger.warning(f"Batch {b_id} not found during sync, skipping")
+                    continue
+                
+                # Find an empty slot
+                if batch.first_tech_lead_id is None:
+                    batch.first_tech_lead_id = profile_id
+                elif batch.second_tech_lead_id is None:
+                    batch.second_tech_lead_id = profile_id
+                elif batch.third_tech_lead_id is None:
+                    batch.third_tech_lead_id = profile_id
+                else:
+                    logger.warning(f"Batch {batch.name} has no empty TL slots for TL {profile_id}")
+            
+            db.flush()
+            logger.info(f"Batch synchronization complete for Technical Lead {profile_id}")
+
         logger.info(f"Calling base update with: {updates}")
         
         try:
