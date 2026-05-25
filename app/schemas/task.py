@@ -33,7 +33,7 @@ class TaskCreate(BaseModel):
     @field_validator('role')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        if v is None or not v.strip():
             return None
         
         normalized = v.strip().upper()
@@ -42,11 +42,10 @@ class TaskCreate(BaseModel):
         elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
             return "FULLSTACK"
         
-        return v # Allow other roles if they exist, but normalize the known ones.
-        # Actually, the user says "Allowed canonical values: AI/ML, FULLSTACK".
-        # But for tasks, maybe there are other roles?
-        # The prompt says: "Standardize backend role values. Allowed canonical values: AI/ML, FULLSTACK"
-        # I'll stick to these two for now.
+        if normalized == "ALL":
+            return None
+            
+        return normalized
     
     @model_validator(mode='after')
     def validate_roadmap_fields(self) -> 'TaskCreate':
@@ -70,7 +69,7 @@ class TaskUpdate(BaseModel):
     @field_validator('role')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        if v is None or not v.strip():
             return None
         
         normalized = v.strip().upper()
@@ -79,7 +78,10 @@ class TaskUpdate(BaseModel):
         elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
             return "FULLSTACK"
         
-        return v
+        if normalized == "ALL":
+            return None
+            
+        return normalized
 
 
 class TaskResponse(BaseModel):
@@ -125,7 +127,7 @@ class TaskBulkCreate(BaseModel):
     @field_validator('role')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        if v is None or not v.strip():
             return None
         
         normalized = v.strip().upper()
@@ -134,7 +136,10 @@ class TaskBulkCreate(BaseModel):
         elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
             return "FULLSTACK"
         
-        return v
+        if normalized == "ALL":
+            return None
+            
+        return normalized
 
     @model_validator(mode='after')
     def validate_import_fields(self) -> 'TaskBulkCreate':

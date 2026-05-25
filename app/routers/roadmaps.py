@@ -59,6 +59,19 @@ def list_roadmaps(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    # Enforce role-based filtering for interns
+    if current_user.role == "INTERN":
+        # Interns can only see roadmaps for their batch
+        effective_batch_id = batch_id or current_user.batch_id
+        if not effective_batch_id:
+             return []
+        
+        # Interns should only see roadmaps for their role or global (role=None)
+        # However, list_by_batch currently filters by a single role if provided.
+        # We might need to adjust roadmap_service.list_by_batch to support multiple roles or handle global roadmaps.
+        # For now, let's filter by the intern's role specifically.
+        return roadmap_service.list_by_batch(db, effective_batch_id, current_user.intern_role)
+
     if batch_id:
         return roadmap_service.list_by_batch(db, batch_id, role)
     return roadmap_service.list(db)
@@ -70,7 +83,21 @@ def get_roadmap(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return roadmap_service.get_full(db, roadmap_id)
+    roadmap = roadmap_service.get_full(db, roadmap_id)
+    # Permission check for Interns
+    if current_user.role == "INTERN":
+        if roadmap.batch_id != current_user.batch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access roadmaps from your own batch"
+            )
+        # Optional: strictly check role too?
+        if roadmap.role and roadmap.role != current_user.intern_role:
+             raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only access roadmaps for your specific role"
+            )
+    return roadmap
 
 
 @router.delete("/{roadmap_id}", status_code=status.HTTP_204_NO_CONTENT)

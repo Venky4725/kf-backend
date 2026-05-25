@@ -279,6 +279,13 @@ class TaskService(CRUDService[Task]):
             if limit is None or limit < 1:
                 limit = 100
             
+            # Enforce batch-level filtering for Interns
+            if current_user and current_user.role == "INTERN":
+                batch_id = current_user.batch_id
+                if not batch_id:
+                    logger.warning(f"Intern {current_user.id} has no batch assigned, returning empty tasks")
+                    return []
+            
             # If batch_id is provided, check if batch exists
             if batch_id:
                 try:
@@ -292,7 +299,7 @@ class TaskService(CRUDService[Task]):
             
             query = db.query(Task)
             
-            # Filter by batch_id (only if provided and not None)
+            # Filter by batch_id
             if batch_id:
                 query = query.filter(Task.batch_id == batch_id)
             
