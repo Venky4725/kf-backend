@@ -74,6 +74,30 @@ def get_tasks(
         return []
 
 
+@router.get("/my", response_model=list[TaskResponse])
+def get_my_tasks(
+    due_date: date | None = None,
+    search: str | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Fetch tasks assigned to the logged-in intern.
+    Includes both individual tasks and roadmap tasks relevant to their role and batch.
+    """
+    try:
+        return task_service.list_tasks(
+            db,
+            due_date=due_date,
+            search=search,
+            current_user=current_user,
+        )
+    except Exception as e:
+        logger.error(f"Error in get_my_tasks: {e}")
+        # Return empty list instead of crashing
+        return []
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(
     task_id: UUID,

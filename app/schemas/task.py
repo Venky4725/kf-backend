@@ -103,11 +103,20 @@ class TaskResponse(BaseModel):
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
     task_type: str | None = None
+    type: str | None = None # task | roadmap
     roadmap_entries: List[RoadmapEntrySchema] | None = None
     created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
     weekly_plan_days: Optional[List[WeeklyPlanDayResponse]] = None
+
+    @model_validator(mode='after')
+    def populate_type(self) -> 'TaskResponse':
+        if self.task_type == "roadmap":
+            self.type = "roadmap"
+        else:
+            self.type = "task"
+        return self
 
     class Config:
         from_attributes = True
