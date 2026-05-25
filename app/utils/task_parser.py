@@ -58,9 +58,92 @@ def parse_simple_tasks(content: str) -> list[dict[str, Any]]:
 def parse_weekly_plan(text: str) -> list[dict[str, Any]]:
     """
     Parses a Weekly Learning Plan raw text into a structured list of dictionaries.
-    Delegates to the robust roadmap parser.
+    Uses BLOCK-BASED parsing triggered by Day headers.
     """
-    return parse_roadmap_to_entries(text)
+    if not text:
+        return []
+
+    # Detect day rows
+    day_regex = re.compile(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Za-z]+\s+\d+", re.IGNORECASE)
+    
+    # Headers to ignore
+    ignore_headers = {
+        "topic / theme", "key activities & exercises", "daily outcome",
+        "topic", "theme", "key activities", "activities", "outcome", "day", "date"
+    }
+
+    raw_lines = text.strip().split('\n')
+    lines = []
+    
+    is_markdown_table = any(line.strip().startswith('|') for line in raw_lines)
+    is_tab_separated = any('\t' in line for line in raw_lines)
+    
+    for line in raw_lines:
+        clean_line = line.strip()
+        if not clean_line:
+            continue
+            
+        # Ignore markdown table separators
+        if re.match(r'^[\-\s\|:]+$', clean_line) and '|' in clean_line:
+            continue
+            
+        if is_markdown_table and clean_line.startswith('|') and clean_line.endswith('|'):
+            # It's a markdown table row, split by | and yield cells
+            cells = [c.strip() for c in clean_line.split('|')[1:-1]]
+            lines.extend(cells)
+        elif is_tab_separated and '\t' in clean_line:
+            # It's a tab separated row
+            cells = [c.strip() for c in clean_line.split('\t')]
+            lines.extend(cells)
+        else:
+            lines.append(clean_line)
+
+    # Filter out exact header matches
+    filtered_lines = [l for l in lines if l.lower() not in ignore_headers]
+    
+    blocks = []
+    current_block = []
+    
+    for line in filtered_lines:
+        if day_regex.match(line):
+            if current_block:
+                blocks.append(current_block)
+            current_block = [line]
+        elif current_block:
+            current_block.append(line)
+            
+    if current_block:
+        blocks.append(current_block)
+        
+    results = []
+    for i, block in enumerate(blocks):
+        day = block[0]
+        topic = ""
+        activities = ""
+        outcome = ""
+        
+        if len(block) >= 4:
+            topic = block[1]
+            outcome = block[-1]
+            activities = "\n".join(block[2:-1])
+        elif len(block) == 3:
+            topic = block[1]
+            outcome = block[2]
+            activities = ""
+        elif len(block) == 2:
+            topic = block[1]
+            outcome = ""
+            activities = ""
+            
+        results.append({
+            "day": day,
+            "topic": topic,
+            "activities": activities,
+            "outcome": outcome,
+            "order_index": i
+        })
+        
+    return results
 
 def parse_roadmap_tasks(content: str) -> list[dict[str, Any]]:
     """
@@ -242,3 +325,22 @@ def _try_parse_date(date_str: str) -> date | None:
             
     logger.warning(f"Could not parse date: {date_str}")
     return None
+
+if __name__ == "__main__":
+    example_text = """
+    Topic / Theme
+    Key Activities & Exercises
+    Daily Outcome
+    Mon May 26
+    Docker — Containerise Everything
+    Docker concepts: images, containers...
+    Containerise the complete full-stack application
+    
+    Tue May 27
+    CI/CD — GitHub Actions
+    GitHub Actions workflow...
+    Fully automated CI/CD pipeline
+    """
+    import json
+    print("Testing block-based parser:")
+    print(json.dumps(parse_weekly_plan(example_text), indent=2))
