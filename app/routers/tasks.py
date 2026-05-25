@@ -2,6 +2,7 @@
 
 from uuid import UUID
 import logging
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
@@ -55,7 +56,6 @@ def get_tasks(
     current_user=Depends(get_current_user),
 ):
     try:
-        from datetime import date as date_type
         return task_service.list_tasks(
             db,
             skip=skip,
