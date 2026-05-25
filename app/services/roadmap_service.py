@@ -36,6 +36,7 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
             # Create or update the roadmap
             # Ensure we use the validated role from payload
             role_to_save = normalize_role(payload.role)
+            logger.info(f"Bulk importing roadmap for batch {payload.batch_id}. Input role: '{payload.role}', Normalized to save: '{role_to_save}'")
 
             # Check if roadmap for this batch and role already exists
             roadmap = db.query(WeeklyRoadmap).filter(

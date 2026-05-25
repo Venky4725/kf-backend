@@ -1,6 +1,6 @@
 # app/schemas/task.py
 
-from pydantic import BaseModel, model_validator, field_validator
+from pydantic import BaseModel, model_validator, field_validator, Field, AliasChoices
 from uuid import UUID
 from datetime import date, datetime
 from typing import Literal, List, Optional
@@ -23,7 +23,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     batch_id: UUID
     assigned_to: UUID | None = None  # NEW
-    role: str | None = None # AI/ML, FULLSTACK
+    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role")) # AI/ML, FULLSTACK
     due_date: date | None = None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
@@ -48,7 +48,7 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     assigned_to: UUID | None = None  # NEW
-    role: str | None = None
+    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
     due_date: date | None = None
     priority: str | None = None
     status: str | None = None
@@ -70,7 +70,7 @@ class TaskResponse(BaseModel):
     batch_name: str | None = None  # Enriched from Batch table
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None  # Enriched from Profile table
-    role: str | None = None
+    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
     due_date: date | None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
@@ -97,7 +97,7 @@ class TaskResponse(BaseModel):
 class TaskBulkCreate(BaseModel):
     batch_id: UUID
     assigned_to: UUID | None = None
-    role: str | None = None
+    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
     
     # Updated tasks field to support both strings and structured RoadmapTask objects
     tasks: List[RoadmapTask | str] | None = None

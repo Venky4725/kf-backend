@@ -82,6 +82,9 @@ def list_roadmaps(
         return query.order_by(WeeklyRoadmap.created_at.desc()).all()
 
     if batch_id:
+        if role:
+            from app.utils.role_utils import normalize_role
+            role = normalize_role(role)
         return roadmap_service.list_by_batch(db, batch_id, role)
     return roadmap_service.list(db)
 

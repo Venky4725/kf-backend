@@ -1,6 +1,6 @@
 # app/schemas/roadmap.py
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, Field, AliasChoices
 from uuid import UUID
 from datetime import datetime
 from typing import List, Optional
@@ -24,7 +24,9 @@ class RoadmapEntryResponse(RoadmapEntryBase):
 class WeeklyRoadmapBase(BaseModel):
     title: str
     batch_id: UUID
-    role: str = "ALL"
+    role: str = Field(default="ALL", validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
+
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator('role', mode='before')
     @classmethod
