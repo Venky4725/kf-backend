@@ -66,11 +66,17 @@ def list_roadmaps(
         if not effective_batch_id:
              return []
         
-        # Interns should only see roadmaps for their role or global (role=None)
-        # However, list_by_batch currently filters by a single role if provided.
-        # We might need to adjust roadmap_service.list_by_batch to support multiple roles or handle global roadmaps.
-        # For now, let's filter by the intern's role specifically.
-        return roadmap_service.list_by_batch(db, effective_batch_id, current_user.intern_role)
+        # Fetch both specific role and GENERAL roadmaps
+        from sqlalchemy import or_
+        from app.models.roadmap import WeeklyRoadmap
+        query = db.query(WeeklyRoadmap).filter(
+            WeeklyRoadmap.batch_id == effective_batch_id,
+            or_(
+                WeeklyRoadmap.role == current_user.intern_role,
+                WeeklyRoadmap.role == "GENERAL"
+            )
+        )
+        return query.order_by(WeeklyRoadmap.created_at.desc()).all()
 
     if batch_id:
         return roadmap_service.list_by_batch(db, batch_id, role)

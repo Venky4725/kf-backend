@@ -30,12 +30,15 @@ class TaskCreate(BaseModel):
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
 
-    @field_validator('role')
+    @field_validator('role', mode='before')
     @classmethod
-    def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or not v.strip():
-            return None
+    def validate_role(cls, v: Optional[str]) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "GENERAL"
         
+        if not isinstance(v, str):
+            return "GENERAL"
+
         normalized = v.strip().upper()
         if normalized in {"AIML", "AI/ML", "AI-ML"}:
             return "AI/ML"
@@ -43,7 +46,7 @@ class TaskCreate(BaseModel):
             return "FULLSTACK"
         
         if normalized == "ALL":
-            return None
+            return "GENERAL"
             
         return normalized
     
@@ -66,12 +69,15 @@ class TaskUpdate(BaseModel):
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
 
-    @field_validator('role')
+    @field_validator('role', mode='before')
     @classmethod
-    def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or not v.strip():
-            return None
+    def validate_role(cls, v: Optional[str]) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "GENERAL"
         
+        if not isinstance(v, str):
+            return "GENERAL"
+
         normalized = v.strip().upper()
         if normalized in {"AIML", "AI/ML", "AI-ML"}:
             return "AI/ML"
@@ -79,7 +85,7 @@ class TaskUpdate(BaseModel):
             return "FULLSTACK"
         
         if normalized == "ALL":
-            return None
+            return "GENERAL"
             
         return normalized
 
@@ -124,12 +130,15 @@ class TaskBulkCreate(BaseModel):
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
 
-    @field_validator('role')
+    @field_validator('role', mode='before')
     @classmethod
-    def validate_role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or not v.strip():
-            return None
+    def validate_role(cls, v: Optional[str]) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "GENERAL"
         
+        if not isinstance(v, str):
+            return "GENERAL"
+
         normalized = v.strip().upper()
         if normalized in {"AIML", "AI/ML", "AI-ML"}:
             return "AI/ML"
@@ -137,7 +146,7 @@ class TaskBulkCreate(BaseModel):
             return "FULLSTACK"
         
         if normalized == "ALL":
-            return None
+            return "GENERAL"
             
         return normalized
 

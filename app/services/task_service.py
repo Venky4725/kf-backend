@@ -317,12 +317,12 @@ class TaskService(CRUDService[Task]):
                 # Interns only see:
                 # 1. Tasks assigned to them specifically
                 # 2. Tasks assigned to their intern_role (AIML, Full Stack)
-                # 3. Tasks assigned to the whole batch (no specific user or role)
+                # 3. Tasks assigned to the whole batch (GENERAL)
                 query = query.filter(
                     or_(
                         Task.assigned_to == current_user.id,
                         Task.role == current_user.intern_role,
-                        (Task.assigned_to == None) & (Task.role == None)
+                        (Task.assigned_to == None) & (Task.role == "GENERAL")
                     )
                 )
 
