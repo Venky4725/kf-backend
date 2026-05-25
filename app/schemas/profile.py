@@ -10,7 +10,7 @@ class ProfileCreate(BaseModel):
     name: str
     email: EmailStr
     role: str
-    intern_role: Optional[str] = None  # AIML, Full Stack
+    intern_role: Optional[str] = None  # AI/ML, FULLSTACK
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = Field(None, validation_alias="batch")  # Accept both "batch_id" and "batch"
     batch_name: Optional[str] = None  # For CSV upload (batch lookup/creation)
@@ -26,12 +26,12 @@ class ProfileCreate(BaseModel):
             return None
         
         normalized = v.strip().upper()
-        if normalized == "AIML":
-            return "AIML"
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
         elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "Full Stack"
+            return "FULLSTACK"
         
-        raise ValueError('Intern role must be either AIML or Full Stack')
+        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
 
     @field_validator('role')
     @classmethod
@@ -74,6 +74,20 @@ class ProfileUpdate(BaseModel):
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = None
     batch_ids: Optional[list[UUID]] = None
+
+    @field_validator('intern_role')
+    @classmethod
+    def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "FULLSTACK"
+        
+        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
 
 
 class BatchShort(BaseModel):

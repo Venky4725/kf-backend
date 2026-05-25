@@ -110,6 +110,15 @@ class ProfileService(CRUDService[Profile]):
         if existing:
             raise ConflictError(f"A profile with email '{normalized_email}' already exists (Name: {existing.name}, Role: {existing.role}).")
 
+        # Automatically populate intern_role from tech_stack if missing (for interns)
+        intern_role = payload.intern_role
+        if role == "INTERN" and not intern_role and payload.tech_stack:
+            normalized_stack = payload.tech_stack.strip().upper()
+            if normalized_stack in {"AIML", "AI/ML", "AI-ML"}:
+                intern_role = "AI/ML"
+            elif normalized_stack in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+                intern_role = "FULLSTACK"
+
         logger.info(f"Creating profile: {payload.name} ({role}) with batch_id={batch_id}")
         return self.create(
             db,
@@ -118,7 +127,7 @@ class ProfileService(CRUDService[Profile]):
                 "name": payload.name.strip(),
                 "email": normalized_email,
                 "role": role,
-                "intern_role": payload.intern_role,
+                "intern_role": intern_role,
                 "tech_stack": payload.tech_stack,
                 "batch_id": batch_id,
                 "password_hash": password_hash,

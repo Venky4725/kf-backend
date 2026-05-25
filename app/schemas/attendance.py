@@ -54,6 +54,8 @@ class InternInfo(BaseModel):
     id: UUID
     name: str
     email: str
+    role: str | None = None
+    intern_role: str | None = None
     batch_id: UUID | None = None
     
     class Config:
@@ -179,9 +181,11 @@ class PendingAttendanceIntern(BaseModel):
     id: UUID
     name: str
     email: str
+    role: str | None = None
+    intern_role: str | None = None
     batch_id: UUID | None = None
     batch_name: str | None = None
     has_attendance: bool = False
-    
+
     class Config:
         from_attributes = True

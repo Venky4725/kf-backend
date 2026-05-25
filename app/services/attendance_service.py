@@ -740,6 +740,8 @@ class AttendanceService(CRUDService[Attendance]):
                 'id': intern.id,
                 'name': intern.name,
                 'email': intern.email,
+                'role': intern.role,
+                'intern_role': intern.intern_role,
                 'batch_id': intern.batch_id,
                 'batch_name': intern.batch.name if intern.batch else None,
                 'has_attendance': has_attendance

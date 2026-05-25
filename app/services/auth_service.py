@@ -217,6 +217,10 @@ class AuthService:
         self, db: Session, payload: AdminCreateUserRequest
     ) -> Profile:
         """Admin endpoint to create new user with default password."""
+        from uuid import uuid4
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Check if email already exists
         existing = db.query(Profile).filter(
             Profile.email == payload.email.strip().lower()
@@ -231,19 +235,23 @@ class AuthService:
         # Generate password hash for default password
         password_hash = hash_password(DEFAULT_PASSWORD)
         
-        # DEBUG: Log hash details
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[DEBUG] Generated password hash: {password_hash[:20]}...")
-        logger.info(f"[DEBUG] Hash length: {len(password_hash)} chars")
+        # Automatically populate intern_role from tech_stack if missing
+        role = payload.role.upper()
+        intern_role = payload.intern_role
+        if role == "INTERN" and not intern_role and payload.tech_stack:
+            normalized_stack = payload.tech_stack.strip().upper()
+            if normalized_stack in {"AIML", "AI/ML", "AI-ML"}:
+                intern_role = "AI/ML"
+            elif normalized_stack in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+                intern_role = "FULLSTACK"
 
         # Create new profile with default password
         profile = Profile(
-            id=UUID(int=uuid4().int),
+            id=uuid4(),
             name=payload.name,
             email=payload.email.strip().lower(),
-            role=payload.role.upper(),
-            intern_role=payload.intern_role,
+            role=role,
+            intern_role=intern_role,
             tech_stack=payload.tech_stack,
             batch_id=payload.batch_id,
             password_hash=password_hash,

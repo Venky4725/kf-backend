@@ -1,7 +1,8 @@
 # app/schemas/auth.py
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
+from typing import Optional
 
 
 class LoginRequest(BaseModel):
@@ -51,6 +52,20 @@ class AdminCreateUserRequest(BaseModel):
     intern_role: str | None = None
     tech_stack: str | None = None
     batch_id: UUID | None = None
+
+    @field_validator('intern_role')
+    @classmethod
+    def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "FULLSTACK"
+        
+        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
 
 
 class MessageResponse(BaseModel):

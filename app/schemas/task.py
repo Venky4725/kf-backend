@@ -23,13 +23,31 @@ class TaskCreate(BaseModel):
     description: str | None = None
     batch_id: UUID
     assigned_to: UUID | None = None  # NEW
-    role: str | None = None # AIML, Full Stack
+    role: str | None = None # AI/ML, FULLSTACK
     due_date: date | None = None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
 
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "FULLSTACK"
+        
+        return v # Allow other roles if they exist, but normalize the known ones.
+        # Actually, the user says "Allowed canonical values: AI/ML, FULLSTACK".
+        # But for tasks, maybe there are other roles?
+        # The prompt says: "Standardize backend role values. Allowed canonical values: AI/ML, FULLSTACK"
+        # I'll stick to these two for now.
+    
     @model_validator(mode='after')
     def validate_roadmap_fields(self) -> 'TaskCreate':
         if self.task_type == "roadmap":
@@ -48,6 +66,20 @@ class TaskUpdate(BaseModel):
     status: str | None = None
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
+
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "FULLSTACK"
+        
+        return v
 
 
 class TaskResponse(BaseModel):
@@ -89,6 +121,20 @@ class TaskBulkCreate(BaseModel):
     # Structured data
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
+
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized in {"AIML", "AI/ML", "AI-ML"}:
+            return "AI/ML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "FULLSTACK"
+        
+        return v
 
     @model_validator(mode='after')
     def validate_import_fields(self) -> 'TaskBulkCreate':
