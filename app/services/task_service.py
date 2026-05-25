@@ -2,7 +2,7 @@ from uuid import UUID
 import logging
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import asc, desc
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -24,7 +24,10 @@ class TaskService(CRUDService[Task]):
 
     def get(self, db: Session, task_id: UUID) -> Task:
         """Get single task with enriched batch_name and assigned_to_name"""
-        task = super().get(db, task_id)
+        from app.services.exceptions import NotFoundError
+        task = db.query(Task).options(selectinload(Task.weekly_plan_days)).filter(Task.id == task_id).first()
+        if not task:
+            raise NotFoundError(self.resource_name, str(task_id))
         
         # Enrich with batch_name and assigned_to_name
         try:
@@ -421,5 +424,7 @@ class TaskService(CRUDService[Task]):
             logger.error(f"Error checking batch existence: {e}")
             raise ConflictError(f"Could not verify batch '{batch_id}'.")
 
+
+task_service = TaskService()
 
 task_service = TaskService()

@@ -1,6 +1,7 @@
 # app/models/task.py
 
 from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -25,3 +26,6 @@ class Task(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    weekly_plan_days = relationship("WeeklyPlanDay", backref="task", cascade="all, delete-orphan")

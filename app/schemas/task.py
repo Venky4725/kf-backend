@@ -3,8 +3,8 @@
 from pydantic import BaseModel, model_validator, field_validator
 from uuid import UUID
 from datetime import date, datetime
-from typing import Literal
-
+from typing import Literal, List, Optional
+from app.schemas.weekly_plan import WeeklyPlanDayResponse
 
 class TaskCreate(BaseModel):
     title: str
@@ -39,6 +39,7 @@ class TaskResponse(BaseModel):
     created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
+    weekly_plan_days: Optional[List[WeeklyPlanDayResponse]] = None
 
     class Config:
         from_attributes = True

@@ -55,6 +55,13 @@ def parse_simple_tasks(content: str) -> list[dict[str, Any]]:
             
     return tasks
 
+def parse_weekly_plan(text: str) -> list[dict[str, Any]]:
+    """
+    Parses a Weekly Learning Plan raw text into a structured list of dictionaries.
+    Delegates to the robust roadmap parser.
+    """
+    return parse_roadmap_to_entries(text)
+
 def parse_roadmap_tasks(content: str) -> list[dict[str, Any]]:
     """
     Parses a training roadmap into Tasks (for TaskService).

@@ -21,6 +21,7 @@ from app.routers import (
     tasks,
     roadmaps,
     dashboard,
+    weekly_plans,
 )
 
 import app.models  # noqa: F401
@@ -151,5 +152,6 @@ for router in (
     notifications.router,
     roadmaps.router,
     dashboard.router,
+    weekly_plans.router,
     ):
     app.include_router(router, prefix="/api")

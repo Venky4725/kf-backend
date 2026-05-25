@@ -9,3 +9,4 @@ from .evaluation import *
 from .notification import *
 from .audit_log import *
 from .auth import *
+from .weekly_plan import *
