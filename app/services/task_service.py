@@ -143,6 +143,9 @@ class TaskService(CRUDService[Task]):
             tasks_to_create = []
             import_mode = payload.import_mode or "legacy"
             
+            # Add logging as requested
+            print(f"DEBUG: Bulk task creation payload: {payload.model_dump()}")
+            
             if payload.task_type == "roadmap" and payload.roadmap_entries:
                 import_mode = "structured_roadmap"
                 tasks_to_create.append({
@@ -152,25 +155,32 @@ class TaskService(CRUDService[Task]):
                     "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries],
                     "due_date": payload.due_date
                 })
+            elif payload.tasks:
+                import_mode = "tasks_list"
+                from app.schemas.task import RoadmapTask
+                for item in payload.tasks:
+                    if isinstance(item, RoadmapTask):
+                        # Structured roadmap task object
+                        description = f"Day: {item.day}\n\nActivities:\n{item.activities}\n\nOutcome:\n{item.outcome}"
+                        tasks_to_create.append({
+                            "title": item.topic.strip(),
+                            "description": description,
+                            "task_type": "roadmap",
+                            "roadmap_entries": [item.model_dump()],
+                            "due_date": payload.due_date
+                        })
+                    elif isinstance(item, str) and item.strip():
+                        # Legacy string title
+                        tasks_to_create.append({
+                            "title": item.strip(),
+                            "description": None,
+                            "due_date": payload.due_date
+                        })
             elif payload.import_mode:
                 if payload.import_mode == "simple":
                     tasks_to_create = parse_simple_tasks(payload.content)
                 elif payload.import_mode == "roadmap":
                     tasks_to_create = parse_roadmap_tasks(payload.content)
-            else:
-                # Legacy mode (backward compatibility)
-                if not payload.tasks:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Task list cannot be empty"
-                    )
-                for title in payload.tasks:
-                    if title and title.strip():
-                        tasks_to_create.append({
-                            "title": title.strip(),
-                            "description": None,
-                            "due_date": payload.due_date
-                        })
 
             if not tasks_to_create:
                 raise HTTPException(

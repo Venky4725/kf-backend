@@ -6,6 +6,12 @@ from datetime import date, datetime
 from typing import Literal, List, Optional
 from app.schemas.weekly_plan import WeeklyPlanDayResponse
 
+class RoadmapTask(BaseModel):
+    day: str
+    topic: str
+    activities: str
+    outcome: str
+
 class RoadmapEntrySchema(BaseModel):
     day: str
     topic: str
@@ -68,8 +74,8 @@ class TaskBulkCreate(BaseModel):
     batch_id: UUID
     assigned_to: UUID | None = None
     
-    # Legacy fields
-    tasks: list[str | None] | None = None
+    # Updated tasks field to support both strings and structured RoadmapTask objects
+    tasks: List[RoadmapTask | str] | None = None
     due_date: date | None = None
     
     # New fields for Smart Import
@@ -79,14 +85,6 @@ class TaskBulkCreate(BaseModel):
     # Structured data
     task_type: str | None = None
     roadmap_entries: List[RoadmapEntrySchema] | None = None
-
-    @field_validator('tasks')
-    @classmethod
-    def validate_tasks(cls, v: list[str | None] | None) -> list[str] | None:
-        if v is None:
-            return None
-        # Ensure all elements are strings and not None
-        return [str(t) for t in v if t is not None]
 
     @model_validator(mode='after')
     def validate_import_fields(self) -> 'TaskBulkCreate':
