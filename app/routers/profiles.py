@@ -30,7 +30,7 @@ def get_profiles(
     sort_order: str | None = None,
     is_active: bool | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(auth_get_current_user),
 ):
     """
     Get all profiles with filtering and pagination.
