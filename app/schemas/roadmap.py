@@ -24,6 +24,7 @@ class RoadmapEntryResponse(RoadmapEntryBase):
 class WeeklyRoadmapBase(BaseModel):
     title: str
     batch_id: UUID
+    role: Optional[str] = None
 
 
 class RoadmapImportRequest(WeeklyRoadmapBase):

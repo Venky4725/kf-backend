@@ -21,7 +21,7 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
     table_name = "weekly_roadmaps"
 
     def import_roadmap(self, db: Session, payload: RoadmapImportRequest, current_user_id: UUID) -> RoadmapBulkImportResponse:
-        """Parses raw text and creates a WeeklyRoadmap with entries."""
+        """Parses raw text and creates or updates a WeeklyRoadmap with entries."""
         try:
             entries_data = parse_roadmap_to_entries(payload.content)
             
@@ -31,13 +31,28 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
                     detail="No valid roadmap entries found in content."
                 )
 
-            # Create the roadmap
-            roadmap = WeeklyRoadmap(
-                title=payload.title,
-                batch_id=payload.batch_id,
-                created_by=current_user_id
-            )
-            db.add(roadmap)
+            # Check if roadmap for this batch and role already exists
+            roadmap = db.query(WeeklyRoadmap).filter(
+                WeeklyRoadmap.batch_id == payload.batch_id,
+                WeeklyRoadmap.role == payload.role
+            ).first()
+
+            if roadmap:
+                # Update existing roadmap
+                roadmap.title = payload.title
+                roadmap.created_by = current_user_id
+                # Clear existing entries
+                db.query(RoadmapEntry).filter(RoadmapEntry.roadmap_id == roadmap.id).delete()
+            else:
+                # Create the roadmap
+                roadmap = WeeklyRoadmap(
+                    title=payload.title,
+                    batch_id=payload.batch_id,
+                    role=payload.role,
+                    created_by=current_user_id
+                )
+                db.add(roadmap)
+            
             db.flush()
 
             # Create entries
@@ -75,8 +90,11 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
         """Parses raw text and returns a list of entries without saving."""
         return parse_roadmap_to_entries(content)
 
-    def list_by_batch(self, db: Session, batch_id: UUID) -> List[WeeklyRoadmap]:
-        return db.query(WeeklyRoadmap).filter(WeeklyRoadmap.batch_id == batch_id).order_by(WeeklyRoadmap.created_at.desc()).all()
+    def list_by_batch(self, db: Session, batch_id: UUID, role: Optional[str] = None) -> List[WeeklyRoadmap]:
+        query = db.query(WeeklyRoadmap).filter(WeeklyRoadmap.batch_id == batch_id)
+        if role:
+            query = query.filter(WeeklyRoadmap.role == role)
+        return query.order_by(WeeklyRoadmap.created_at.desc()).all()
 
     def get_full(self, db: Session, roadmap_id: UUID) -> WeeklyRoadmap:
         roadmap = db.query(WeeklyRoadmap).filter(WeeklyRoadmap.id == roadmap_id).first()

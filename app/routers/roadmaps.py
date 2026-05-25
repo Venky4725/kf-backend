@@ -55,11 +55,12 @@ def preview_roadmap(
 @router.get("", response_model=List[WeeklyRoadmapShortResponse])
 def list_roadmaps(
     batch_id: Optional[UUID] = None,
+    role: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     if batch_id:
-        return roadmap_service.list_by_batch(db, batch_id)
+        return roadmap_service.list_by_batch(db, batch_id, role)
     return roadmap_service.list(db)
 
 
