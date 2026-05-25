@@ -148,9 +148,11 @@ class TaskService(CRUDService[Task]):
             
             if payload.task_type == "roadmap" and payload.roadmap_entries:
                 import_mode = "structured_roadmap"
+                # Create ONE task for the entire roadmap
+                first_topic = payload.roadmap_entries[0].topic if payload.roadmap_entries else "Training Roadmap"
                 tasks_to_create.append({
-                    "title": "Training Roadmap",
-                    "description": None,
+                    "title": f"Roadmap: {first_topic}",
+                    "description": "Weekly Training Roadmap (see structured entries)",
                     "task_type": "roadmap",
                     "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries],
                     "due_date": payload.due_date
@@ -158,19 +160,23 @@ class TaskService(CRUDService[Task]):
             elif payload.tasks:
                 import_mode = "tasks_list"
                 from app.schemas.task import RoadmapTask
-                for item in payload.tasks:
-                    if isinstance(item, RoadmapTask):
-                        # Structured roadmap task object
-                        description = f"Day: {item.day}\n\nActivities:\n{item.activities}\n\nOutcome:\n{item.outcome}"
-                        tasks_to_create.append({
-                            "title": item.topic.strip(),
-                            "description": description,
-                            "task_type": "roadmap",
-                            "roadmap_entries": [item.model_dump()],
-                            "due_date": payload.due_date
-                        })
-                    elif isinstance(item, str) and item.strip():
-                        # Legacy string title
+                roadmap_items = [item for item in payload.tasks if isinstance(item, RoadmapTask)]
+                legacy_items = [item for item in payload.tasks if isinstance(item, str)]
+                
+                if roadmap_items:
+                    # Create ONE task for the entire roadmap
+                    first_topic = roadmap_items[0].topic
+                    tasks_to_create.append({
+                        "title": f"Roadmap: {first_topic}",
+                        "description": "Weekly Training Roadmap (see structured entries)",
+                        "task_type": "roadmap",
+                        "roadmap_entries": [item.model_dump() for item in roadmap_items],
+                        "due_date": payload.due_date
+                    })
+                
+                # Still handle legacy string titles (these remain separate tasks)
+                for item in legacy_items:
+                    if item.strip():
                         tasks_to_create.append({
                             "title": item.strip(),
                             "description": None,
