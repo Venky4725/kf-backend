@@ -24,28 +24,13 @@ class RoadmapEntryResponse(RoadmapEntryBase):
 class WeeklyRoadmapBase(BaseModel):
     title: str
     batch_id: UUID
-    role: str = "GENERAL"
+    role: str = "ALL"
 
     @field_validator('role', mode='before')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> str:
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "GENERAL"
-        
-        if not isinstance(v, str):
-            return "GENERAL"
-
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        if normalized == "ALL":
-            return "GENERAL"
-            
-        return normalized
-
+        from app.utils.role_utils import normalize_role
+        return normalize_role(v)
 
 class RoadmapImportRequest(WeeklyRoadmapBase):
     content: str

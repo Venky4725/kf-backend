@@ -23,6 +23,8 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
     def import_roadmap(self, db: Session, payload: RoadmapImportRequest, current_user_id: UUID) -> RoadmapBulkImportResponse:
         """Parses raw text and creates or updates a WeeklyRoadmap with entries."""
         try:
+            from app.utils.role_utils import normalize_role
+            
             entries_data = parse_roadmap_to_entries(payload.content)
             
             if not entries_data:
@@ -33,7 +35,7 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
 
             # Create or update the roadmap
             # Ensure we use the validated role from payload
-            role_to_save = payload.role
+            role_to_save = normalize_role(payload.role)
 
             # Check if roadmap for this batch and role already exists
             roadmap = db.query(WeeklyRoadmap).filter(

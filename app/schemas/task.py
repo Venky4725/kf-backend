@@ -33,22 +33,8 @@ class TaskCreate(BaseModel):
     @field_validator('role', mode='before')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> str:
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "GENERAL"
-        
-        if not isinstance(v, str):
-            return "GENERAL"
-
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        if normalized == "ALL":
-            return "GENERAL"
-            
-        return normalized
+        from app.utils.role_utils import normalize_role
+        return normalize_role(v)
     
     @model_validator(mode='after')
     def validate_roadmap_fields(self) -> 'TaskCreate':
@@ -72,22 +58,8 @@ class TaskUpdate(BaseModel):
     @field_validator('role', mode='before')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> str:
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "GENERAL"
-        
-        if not isinstance(v, str):
-            return "GENERAL"
-
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        if normalized == "ALL":
-            return "GENERAL"
-            
-        return normalized
+        from app.utils.role_utils import normalize_role
+        return normalize_role(v)
 
 
 class TaskResponse(BaseModel):
@@ -142,22 +114,8 @@ class TaskBulkCreate(BaseModel):
     @field_validator('role', mode='before')
     @classmethod
     def validate_role(cls, v: Optional[str]) -> str:
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "GENERAL"
-        
-        if not isinstance(v, str):
-            return "GENERAL"
-
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        if normalized == "ALL":
-            return "GENERAL"
-            
-        return normalized
+        from app.utils.role_utils import normalize_role
+        return normalize_role(v)
 
     @model_validator(mode='after')
     def validate_import_fields(self) -> 'TaskBulkCreate':

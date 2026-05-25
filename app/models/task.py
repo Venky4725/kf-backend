@@ -19,7 +19,7 @@ class Task(Base):
     # Structured data
     task_type = Column(String, nullable=True, server_default="single") # e.g., "roadmap", "assignment"
     roadmap_entries = Column(JSON, nullable=True, server_default='[]')
-    role = Column(String, nullable=False, server_default="GENERAL") # Target intern role (AI/ML, FULLSTACK, GENERAL)
+    role = Column(String, nullable=False, server_default="ALL") # Target intern role (AIML, FULLSTACK, ALL)
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)  # NEW

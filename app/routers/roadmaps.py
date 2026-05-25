@@ -66,14 +66,17 @@ def list_roadmaps(
         if not effective_batch_id:
              return []
         
-        # Fetch both specific role and GENERAL roadmaps
+        # Fetch both specific role and ALL roadmaps
         from sqlalchemy import or_
         from app.models.roadmap import WeeklyRoadmap
+        from app.utils.role_utils import normalize_role
+        
+        normalized_intern_role = normalize_role(current_user.intern_role)
         query = db.query(WeeklyRoadmap).filter(
             WeeklyRoadmap.batch_id == effective_batch_id,
             or_(
-                WeeklyRoadmap.role == current_user.intern_role,
-                WeeklyRoadmap.role == "GENERAL"
+                WeeklyRoadmap.role == normalized_intern_role,
+                WeeklyRoadmap.role == "ALL"
             )
         )
         return query.order_by(WeeklyRoadmap.created_at.desc()).all()
@@ -98,11 +101,14 @@ def get_roadmap(
                 detail="You can only access roadmaps from your own batch"
             )
         # Optional: strictly check role too?
-        if roadmap.role and roadmap.role != current_user.intern_role:
-             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only access roadmaps for your specific role"
-            )
+        if roadmap.role:
+            from app.utils.role_utils import normalize_role
+            normalized_intern_role = normalize_role(current_user.intern_role)
+            if roadmap.role not in (normalized_intern_role, "ALL"):
+                 raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only access roadmaps for your specific role"
+                )
     return roadmap
 
 

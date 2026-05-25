@@ -144,9 +144,22 @@ class DashboardService:
             }
         
         elif current_user.role == "INTERN":
+            from sqlalchemy import or_
+            from app.utils.role_utils import normalize_role
+            normalized_intern_role = normalize_role(current_user.intern_role)
+            
+            intern_task_count = db.query(func.count(Task.id)).filter(
+                Task.batch_id == current_user.batch_id,
+                or_(
+                    Task.assigned_to == current_user.id,
+                    Task.role == normalized_intern_role,
+                    (Task.assigned_to == None) & (Task.role == "ALL")
+                )
+            ).scalar()
+            
             return {
                 "interns": 0, "batches": 0, "tech_leads": 0,
-                "tasks": db.query(func.count(Task.id)).filter(Task.assigned_to == current_user.id).scalar(),
+                "tasks": intern_task_count,
                 "submissions": db.query(func.count(Submission.id)).filter(Submission.user_id == current_user.id).scalar(),
                 "evaluations": db.query(func.count(Evaluation.id)).filter(Evaluation.intern_id == current_user.id).scalar(),
                 "notifications": db.query(func.count(Notification.id)).filter(

@@ -314,15 +314,17 @@ class TaskService(CRUDService[Task]):
             # Role-based filtering for Interns
             if current_user and current_user.role == "INTERN":
                 from sqlalchemy import or_
+                from app.utils.role_utils import normalize_role
+                normalized_intern_role = normalize_role(current_user.intern_role)
                 # Interns only see:
                 # 1. Tasks assigned to them specifically
                 # 2. Tasks assigned to their intern_role (AIML, Full Stack)
-                # 3. Tasks assigned to the whole batch (GENERAL)
+                # 3. Tasks assigned to the whole batch (ALL)
                 query = query.filter(
                     or_(
                         Task.assigned_to == current_user.id,
-                        Task.role == current_user.intern_role,
-                        (Task.assigned_to == None) & (Task.role == "GENERAL")
+                        Task.role == normalized_intern_role,
+                        (Task.assigned_to == None) & (Task.role == "ALL")
                     )
                 )
 

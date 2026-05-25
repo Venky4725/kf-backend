@@ -24,14 +24,11 @@ class ProfileCreate(BaseModel):
     def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-        
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
+        from app.utils.role_utils import normalize_role
+        normalized = normalize_role(v)
+        if normalized not in {"AIML", "FULLSTACK"}:
+            raise ValueError('Intern role must be either AIML or FULLSTACK')
+        return normalized
 
     @field_validator('role')
     @classmethod
@@ -80,14 +77,11 @@ class ProfileUpdate(BaseModel):
     def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-        
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
+        from app.utils.role_utils import normalize_role
+        normalized = normalize_role(v)
+        if normalized not in {"AIML", "FULLSTACK"}:
+            raise ValueError('Intern role must be either AIML or FULLSTACK')
+        return normalized
 
 
 class BatchShort(BaseModel):
