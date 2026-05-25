@@ -159,7 +159,7 @@ class DashboardService:
         
         return self._get_empty_stats(date.today())["counts"]
 
-    def get_recent_submissions(self, db: Session, current_user, tl_batch_ids=None, limit=5) -> list:
+    def get_recent_submissions(self, db: Session, current_user, tl_batch_ids=None, limit=3) -> list:
         """Fetch latest submissions with strict role-based filtering."""
         query = db.query(Submission).options(joinedload(Submission.profile))
         
@@ -177,19 +177,18 @@ class DashboardService:
         elif current_user.role == "INTERN":
             query = query.filter(Submission.user_id == current_user.id)
         elif current_user.role == "ADMIN":
-            # Admin only sees submissions they might need to review? 
-            # If Admin doesn't manage batches, maybe they see none or all.
-            # Following "Appropriate system-wide counts", maybe they see all.
-            # But "Relevant metrics for that role" suggests filtering.
-            # I'll keep it empty for Admin unless they have interns, as Admins manage the system not daily submissions.
-            return []
+            # Admins can see all recent submissions for system monitoring
+            pass
         
         submissions = query.order_by(desc(Submission.created_at)).limit(limit).all()
         
         return [
             {
                 "id": str(sub.id),
+                "submitter_id": str(sub.user_id),
                 "intern_name": sub.profile.name if sub.profile else "Unknown",
+                "submitter_name": sub.profile.name if sub.profile else "Unknown",
+                "batch_name": sub.profile.batch.name if sub.profile and sub.profile.batch else "Unknown",
                 "submitted_for": sub.submitted_for.isoformat(),
                 "created_at": sub.created_at.isoformat(),
                 "content": sub.content[:100] + "..." if len(sub.content) > 100 else sub.content

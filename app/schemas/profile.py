@@ -10,6 +10,7 @@ class ProfileCreate(BaseModel):
     name: str
     email: EmailStr
     role: str
+    intern_role: Optional[str] = None  # AIML, Full Stack
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = Field(None, validation_alias="batch")  # Accept both "batch_id" and "batch"
     batch_name: Optional[str] = None  # For CSV upload (batch lookup/creation)
@@ -18,6 +19,20 @@ class ProfileCreate(BaseModel):
         "populate_by_name": True,  # Allow both field name and alias
     }
     
+    @field_validator('intern_role')
+    @classmethod
+    def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        
+        normalized = v.strip().upper()
+        if normalized == "AIML":
+            return "AIML"
+        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+            return "Full Stack"
+        
+        raise ValueError('Intern role must be either AIML or Full Stack')
+
     @field_validator('role')
     @classmethod
     def validate_role(cls, v: str) -> str:
@@ -55,6 +70,7 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
+    intern_role: Optional[str] = None
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = None
     batch_ids: Optional[list[UUID]] = None
@@ -75,6 +91,7 @@ class ProfileListResponse(BaseModel):
     name: str
     email: EmailStr
     role: str
+    intern_role: Optional[str] = None
     tech_stack: Optional[str] = None
     batch_id: Optional[UUID] = None
     batch_name: Optional[str] = None
@@ -92,6 +109,7 @@ class ProfileResponse(BaseModel):
     name: str
     email: EmailStr
     role: str
+    intern_role: Optional[str] = None
     tech_stack: Optional[str]
     batch_id: Optional[UUID]
     batch_name: Optional[str] = None  # Added for consistency

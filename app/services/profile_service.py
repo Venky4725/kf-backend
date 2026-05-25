@@ -118,6 +118,7 @@ class ProfileService(CRUDService[Profile]):
                 "name": payload.name.strip(),
                 "email": normalized_email,
                 "role": role,
+                "intern_role": payload.intern_role,
                 "tech_stack": payload.tech_stack,
                 "batch_id": batch_id,
                 "password_hash": password_hash,
@@ -133,6 +134,7 @@ class ProfileService(CRUDService[Profile]):
         skip: int = 0,
         limit: int = 100,
         role: str | None = None,
+        intern_role: str | None = None,
         batch_id: UUID | None = None,
         search_name: str | None = None,
         search_email: str | None = None,
@@ -152,7 +154,7 @@ class ProfileService(CRUDService[Profile]):
         # Base query - exclude password_hash from listings
         query = db.query(Profile).options(load_only(
             Profile.id, Profile.name, Profile.email, Profile.role, 
-            Profile.tech_stack, Profile.batch_id, Profile.is_active,
+            Profile.intern_role, Profile.tech_stack, Profile.batch_id, Profile.is_active,
             Profile.created_at, Profile.updated_at
         ))
         
@@ -210,6 +212,10 @@ class ProfileService(CRUDService[Profile]):
         # Apply role filter (skip if Tech Lead already filtered by INTERN)
         if role and (not current_user or current_user.role != "TECHNICAL_LEAD"):
             query = query.filter(Profile.role == role.strip().upper())
+        
+        # Apply intern_role filter
+        if intern_role:
+            query = query.filter(Profile.intern_role == intern_role.strip())
         
         # Apply batch_id filter
         if batch_id:

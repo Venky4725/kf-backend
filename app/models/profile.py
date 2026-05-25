@@ -14,6 +14,7 @@ class Profile(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     role = Column(String, nullable=False)
+    intern_role = Column(String, nullable=True) # AIML, Full Stack
     tech_stack = Column(String, nullable=True)
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=True, index=True)

@@ -46,20 +46,27 @@ def get_tasks(
     skip: int = 0,
     limit: int = 100,
     batch_id: UUID | None = None,
+    role: str | None = None,
     search: str | None = None,
+    due_date: date | None = None,
     sort_by: str | None = None,
     order: str | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     try:
+        from datetime import date as date_type
         return task_service.list_tasks(
             db,
             skip=skip,
             limit=limit,
             batch_id=batch_id,
+            role=role,
             search=search,
+            due_date=due_date,
             sort_by=sort_by,
             order=order,
+            current_user=current_user,
         )
     except Exception as e:
         logger.error(f"Error in get_tasks: {e}")

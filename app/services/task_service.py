@@ -87,7 +87,8 @@ class TaskService(CRUDService[Task]):
                 "status": payload.status or "OPEN",
                 "created_by": current_user.id if current_user else None,
                 "task_type": payload.task_type,
-                "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries] if payload.roadmap_entries else None
+                "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries] if payload.roadmap_entries else None,
+                "role": payload.role
             }
             
             # Add assigned_to if provided (handle missing column gracefully)
@@ -155,7 +156,8 @@ class TaskService(CRUDService[Task]):
                     "description": "Weekly Training Roadmap (see structured entries)",
                     "task_type": "roadmap",
                     "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries],
-                    "due_date": payload.due_date
+                    "due_date": payload.due_date,
+                    "role": payload.role
                 })
             elif payload.tasks:
                 import_mode = "tasks_list"
@@ -171,7 +173,8 @@ class TaskService(CRUDService[Task]):
                         "description": "Weekly Training Roadmap (see structured entries)",
                         "task_type": "roadmap",
                         "roadmap_entries": [item.model_dump() for item in roadmap_items],
-                        "due_date": payload.due_date
+                        "due_date": payload.due_date,
+                        "role": payload.role
                     })
                 
                 # Still handle legacy string titles (these remain separate tasks)
@@ -180,7 +183,8 @@ class TaskService(CRUDService[Task]):
                         tasks_to_create.append({
                             "title": item.strip(),
                             "description": None,
-                            "due_date": payload.due_date
+                            "due_date": payload.due_date,
+                            "role": payload.role
                         })
             elif payload.import_mode:
                 if payload.import_mode == "simple":
@@ -210,7 +214,8 @@ class TaskService(CRUDService[Task]):
                         assigned_to=payload.assigned_to,
                         created_by=current_user.id if current_user else None,
                         task_type=task_data.get("task_type"),
-                        roadmap_entries=task_data.get("roadmap_entries")
+                        roadmap_entries=task_data.get("roadmap_entries"),
+                        role=task_data.get("role")
                     )
                     db.add(task)
                     created_tasks.append(task)
@@ -259,9 +264,12 @@ class TaskService(CRUDService[Task]):
         skip: int = 0,
         limit: int = 100,
         batch_id: UUID | None = None,
+        role: str | None = None,
         search: str | None = None,
+        due_date: date | None = None,
         sort_by: str | None = None,
         order: str | None = None,
+        current_user = None
     ) -> list[Task]:
         try:
             # Validate skip and limit
@@ -287,6 +295,29 @@ class TaskService(CRUDService[Task]):
             if batch_id:
                 query = query.filter(Task.batch_id == batch_id)
             
+            # Filter by role
+            if role:
+                query = query.filter(Task.role == role)
+            
+            # Filter by due_date (actual assigned date)
+            if due_date:
+                query = query.filter(Task.due_date == due_date)
+            
+            # Role-based filtering for Interns
+            if current_user and current_user.role == "INTERN":
+                from sqlalchemy import or_
+                # Interns only see:
+                # 1. Tasks assigned to them specifically
+                # 2. Tasks assigned to their intern_role (AIML, Full Stack)
+                # 3. Tasks assigned to the whole batch (no specific user or role)
+                query = query.filter(
+                    or_(
+                        Task.assigned_to == current_user.id,
+                        Task.role == current_user.intern_role,
+                        (Task.assigned_to == None) & (Task.role == None)
+                    )
+                )
+
             # Search in title and description (only if provided and not empty)
             if search and search.strip():
                 try:

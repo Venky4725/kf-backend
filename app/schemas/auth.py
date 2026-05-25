@@ -21,6 +21,7 @@ class UserInfo(BaseModel):
     name: str
     email: EmailStr
     role: str
+    intern_role: str | None = None
     tech_stack: str | None
     batch_id: UUID | None
 
@@ -47,6 +48,7 @@ class AdminCreateUserRequest(BaseModel):
     name: str
     email: EmailStr
     role: str
+    intern_role: str | None = None
     tech_stack: str | None = None
     batch_id: UUID | None = None
 

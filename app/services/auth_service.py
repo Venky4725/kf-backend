@@ -83,6 +83,7 @@ class AuthService:
                 name=profile.name,
                 email=profile.email,
                 role=profile.role,
+                intern_role=profile.intern_role,
                 tech_stack=profile.tech_stack,
                 batch_id=profile.batch_id,
             ),
@@ -238,10 +239,11 @@ class AuthService:
 
         # Create new profile with default password
         profile = Profile(
-            id=UUID(),
+            id=UUID(int=uuid4().int),
             name=payload.name,
             email=payload.email.strip().lower(),
             role=payload.role.upper(),
+            intern_role=payload.intern_role,
             tech_stack=payload.tech_stack,
             batch_id=payload.batch_id,
             password_hash=password_hash,

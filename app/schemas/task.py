@@ -23,6 +23,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     batch_id: UUID
     assigned_to: UUID | None = None  # NEW
+    role: str | None = None # AIML, Full Stack
     due_date: date | None = None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
@@ -41,6 +42,7 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     assigned_to: UUID | None = None  # NEW
+    role: str | None = None
     due_date: date | None = None
     priority: str | None = None
     status: str | None = None
@@ -56,6 +58,7 @@ class TaskResponse(BaseModel):
     batch_name: str | None = None  # Enriched from Batch table
     assigned_to: UUID | None = None
     assigned_to_name: str | None = None  # Enriched from Profile table
+    role: str | None = None
     due_date: date | None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
@@ -73,6 +76,7 @@ class TaskResponse(BaseModel):
 class TaskBulkCreate(BaseModel):
     batch_id: UUID
     assigned_to: UUID | None = None
+    role: str | None = None
     
     # Updated tasks field to support both strings and structured RoadmapTask objects
     tasks: List[RoadmapTask | str] | None = None

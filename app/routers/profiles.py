@@ -16,13 +16,12 @@ from app.services.auth_service import auth_service
 from app.services.profile_service import profile_service
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
-
-
 @router.get("", response_model=list[ProfileListResponse])
 def get_profiles(
     skip: int = 0,
     limit: int = 100,
     role: str | None = None,
+    intern_role: str | None = None,
     batch_id: UUID | None = None,
     search_name: str | None = None,
     search_email: str | None = None,
@@ -31,17 +30,22 @@ def get_profiles(
     sort_order: str | None = None,
     is_active: bool | None = None,
     db: Session = Depends(get_db),
-    current_user=Depends(auth_get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
-    Get profiles with role-based access control.
-    Uses ProfileListResponse to reduce payload size.
+    Get all profiles with filtering and pagination.
+
+    RBAC:
+    - ADMIN: See all
+    - TECHNICAL_LEAD: See interns in their batches
+    - INTERN: See only own profile
     """
     return profile_service.list_profiles(
         db,
         skip=skip,
         limit=limit,
         role=role,
+        intern_role=intern_role,
         batch_id=batch_id,
         search_name=search_name,
         search_email=search_email,
@@ -51,7 +55,6 @@ def get_profiles(
         is_active=is_active,
         current_user=current_user,
     )
-
 
 
 @router.get("/{profile_id}", response_model=ProfileResponse)
