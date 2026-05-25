@@ -118,12 +118,27 @@ class DashboardService:
                 from app.core.tech_lead_utils import get_tech_lead_batch_ids
                 tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
 
+            # Debug logging for Technical Lead stats
+            logger.info(f"DEBUG Dashboard TL: id={current_user.id}, assigned_batch_ids={tl_batch_ids}")
+
+            intern_count = db.query(func.count(Profile.id)).filter(
+                Profile.role == "INTERN", 
+                Profile.is_active == True,
+                Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
+            ).scalar() if tl_batch_ids else 0
+
+            submission_count = db.query(func.count(Submission.id)).join(Profile, Submission.user_id == Profile.id).filter(
+                Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
+            ).scalar() if tl_batch_ids else 0
+
+            evaluation_count = db.query(func.count(Evaluation.id)).join(Profile, Evaluation.intern_id == Profile.id).filter(
+                Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
+            ).scalar() if tl_batch_ids else 0
+
+            logger.info(f"DEBUG Dashboard TL counts: interns={intern_count}, submissions={submission_count}, evaluations={evaluation_count}")
+
             return {
-                "interns": db.query(func.count(Profile.id)).filter(
-                    Profile.role == "INTERN", 
-                    Profile.is_active == True,
-                    Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
-                ).scalar() if tl_batch_ids else 0,
+                "interns": intern_count,
                 "batches": len(tl_batch_ids) if tl_batch_ids else 0,
                 "tech_leads": 0, # TLs don't manage other TLs
                 
@@ -131,10 +146,8 @@ class DashboardService:
                 "tasks": db.query(func.count(Task.id)).filter(
                     or_(Task.created_by == current_user.id, Task.assigned_to == current_user.id)
                 ).scalar(),
-                "submissions": db.query(func.count(Submission.id)).join(Profile, Submission.user_id == Profile.id).filter(
-                    Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
-                ).scalar() if tl_batch_ids else 0,
-                "evaluations": db.query(func.count(Evaluation.id)).filter(Evaluation.reviewed_by == current_user.id).scalar(),
+                "submissions": submission_count,
+                "evaluations": evaluation_count,
                 "notifications": db.query(func.count(Notification.id)).filter(
                     or_(
                         Notification.user_id == current_user.id,
