@@ -17,8 +17,8 @@ class Task(Base):
     description = Column(Text, nullable=True)
     
     # Structured data
-    task_type = Column(String, nullable=True) # e.g., "roadmap", "assignment"
-    roadmap_entries = Column(JSON, nullable=True)
+    task_type = Column(String, nullable=True, server_default="single") # e.g., "roadmap", "assignment"
+    roadmap_entries = Column(JSON, nullable=True, server_default='[]')
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)  # NEW

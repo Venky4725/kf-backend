@@ -107,6 +107,7 @@ class TaskBulkCreate(BaseModel):
 
 
 class TaskBulkResponse(BaseModel):
+    success: bool = True
     created: int
-    failed: int
-    task_ids: list[UUID]
+    failed: int = 0
+    task_ids: list[UUID] = []
