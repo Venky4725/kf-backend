@@ -31,10 +31,14 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
                     detail="No valid roadmap entries found in content."
                 )
 
+            # Create or update the roadmap
+            # Ensure we use the validated role from payload
+            role_to_save = payload.role
+
             # Check if roadmap for this batch and role already exists
             roadmap = db.query(WeeklyRoadmap).filter(
                 WeeklyRoadmap.batch_id == payload.batch_id,
-                WeeklyRoadmap.role == payload.role
+                WeeklyRoadmap.role == role_to_save
             ).first()
 
             if roadmap:
@@ -48,7 +52,7 @@ class RoadmapService(CRUDService[WeeklyRoadmap]):
                 roadmap = WeeklyRoadmap(
                     title=payload.title,
                     batch_id=payload.batch_id,
-                    role=payload.role,
+                    role=role_to_save,
                     created_by=current_user_id
                 )
                 db.add(roadmap)

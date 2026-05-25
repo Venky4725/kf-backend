@@ -216,7 +216,7 @@ class TaskService(CRUDService[Task]):
                         created_by=current_user.id if current_user else None,
                         task_type=task_data.get("task_type"),
                         roadmap_entries=task_data.get("roadmap_entries"),
-                        role=task_data.get("role")
+                        role=task_data.get("role") or payload.role
                     )
                     db.add(task)
                     created_tasks.append(task)
