@@ -6,6 +6,12 @@ from datetime import date, datetime
 from typing import Literal, List, Optional
 from app.schemas.weekly_plan import WeeklyPlanDayResponse
 
+class RoadmapEntrySchema(BaseModel):
+    day: str
+    topic: str
+    activities: str
+    outcome: str
+
 class TaskCreate(BaseModel):
     title: str
     description: str | None = None
@@ -14,6 +20,15 @@ class TaskCreate(BaseModel):
     due_date: date | None = None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
+    task_type: str | None = None
+    roadmap_entries: List[RoadmapEntrySchema] | None = None
+
+    @model_validator(mode='after')
+    def validate_roadmap_fields(self) -> 'TaskCreate':
+        if self.task_type == "roadmap":
+            if not self.roadmap_entries or len(self.roadmap_entries) == 0:
+                raise ValueError("roadmap_entries required for roadmap tasks")
+        return self
 
 
 class TaskUpdate(BaseModel):
@@ -23,6 +38,8 @@ class TaskUpdate(BaseModel):
     due_date: date | None = None
     priority: str | None = None
     status: str | None = None
+    task_type: str | None = None
+    roadmap_entries: List[RoadmapEntrySchema] | None = None
 
 
 class TaskResponse(BaseModel):
@@ -36,6 +53,8 @@ class TaskResponse(BaseModel):
     due_date: date | None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"
+    task_type: str | None = None
+    roadmap_entries: List[RoadmapEntrySchema] | None = None
     created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
@@ -56,6 +75,10 @@ class TaskBulkCreate(BaseModel):
     # New fields for Smart Import
     import_mode: Literal["simple", "roadmap"] | None = None
     content: str | None = None
+    
+    # Structured data
+    task_type: str | None = None
+    roadmap_entries: List[RoadmapEntrySchema] | None = None
 
     @field_validator('tasks')
     @classmethod
@@ -77,9 +100,10 @@ class TaskBulkCreate(BaseModel):
         # Ensure at least one import method is valid
         has_tasks = self.tasks is not None and len(self.tasks) > 0
         has_smart = self.import_mode is not None and self.content is not None
+        has_structured = self.task_type == "roadmap" and self.roadmap_entries is not None and len(self.roadmap_entries) > 0
         
-        if not has_tasks and not has_smart:
-            raise ValueError("No tasks provided. Provide 'tasks' list or 'import_mode' + 'content'.")
+        if not has_tasks and not has_smart and not has_structured:
+            raise ValueError("No tasks provided. Provide 'tasks' list, 'import_mode' + 'content', or 'roadmap_entries'.")
             
         return self
 

@@ -1,6 +1,6 @@
 # app/models/task.py
 
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -15,6 +15,10 @@ class Task(Base):
 
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    
+    # Structured data
+    task_type = Column(String, nullable=True) # e.g., "roadmap", "assignment"
+    roadmap_entries = Column(JSON, nullable=True)
 
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)  # NEW

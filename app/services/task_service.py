@@ -86,6 +86,8 @@ class TaskService(CRUDService[Task]):
                 "priority": payload.priority or "MEDIUM",
                 "status": payload.status or "OPEN",
                 "created_by": current_user.id if current_user else None,
+                "task_type": payload.task_type,
+                "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries] if payload.roadmap_entries else None
             }
             
             # Add assigned_to if provided (handle missing column gracefully)
@@ -137,11 +139,20 @@ class TaskService(CRUDService[Task]):
                         detail="Cannot assign task to inactive user"
                     )
 
-            # 2. Process Task List (Legacy or Smart Import)
+            # 2. Process Task List (Legacy, Smart Import, or Structured Roadmap)
             tasks_to_create = []
             import_mode = payload.import_mode or "legacy"
             
-            if payload.import_mode:
+            if payload.task_type == "roadmap" and payload.roadmap_entries:
+                import_mode = "structured_roadmap"
+                tasks_to_create.append({
+                    "title": "Training Roadmap",
+                    "description": None,
+                    "task_type": "roadmap",
+                    "roadmap_entries": [e.model_dump() for e in payload.roadmap_entries],
+                    "due_date": payload.due_date
+                })
+            elif payload.import_mode:
                 if payload.import_mode == "simple":
                     tasks_to_create = parse_simple_tasks(payload.content)
                 elif payload.import_mode == "roadmap":
@@ -181,7 +192,9 @@ class TaskService(CRUDService[Task]):
                         priority="LOW",
                         status="PENDING",
                         assigned_to=payload.assigned_to,
-                        created_by=current_user.id if current_user else None
+                        created_by=current_user.id if current_user else None,
+                        task_type=task_data.get("task_type"),
+                        roadmap_entries=task_data.get("roadmap_entries")
                     )
                     db.add(task)
                     created_tasks.append(task)
@@ -424,7 +437,5 @@ class TaskService(CRUDService[Task]):
             logger.error(f"Error checking batch existence: {e}")
             raise ConflictError(f"Could not verify batch '{batch_id}'.")
 
-
-task_service = TaskService()
 
 task_service = TaskService()
