@@ -98,7 +98,7 @@ register_error_handlers(app)
 origins = []
 
 # Add production frontend
-origins.append("https://kf-frontend-rho.vercel.app")
+origins.append("https://fr-beige-ten.vercel.app")
 
 # Add local development origins
 origins.extend([
@@ -140,35 +140,17 @@ app.add_middleware(
 def health():
     return {"status": "ok"}
 
-# Track which routers were successfully loaded
-loaded_routers = []
-failed_routers = []
-
-for router_module in (
-    auth,
-    profiles,
-    batches,
-    tasks,
-    attendance,
-    submissions,
-    evaluations,
-    notifications,
-    roadmaps,
-    dashboard,
-    weekly_plans,
+for router in (
+    auth.router,
+    profiles.router,
+    batches.router,
+    tasks.router,
+    attendance.router,
+    submissions.router,
+    evaluations.router,
+    notifications.router,
+    roadmaps.router,
+    dashboard.router,
+    weekly_plans.router,
     ):
-    try:
-        app.include_router(router_module.router, prefix="/api")
-        loaded_routers.append(router_module.__name__)
-    except Exception as e:
-        failed_routers.append(router_module.__name__)
-        logger.error(f"❌ CRITICAL: Failed to include router from {router_module.__name__}")
-        logger.error(f"   Error: {type(e).__name__}: {str(e)}")
-        # In production, we might want to still crash, but having the log above is the key
-        # Re-raise to ensure we don't start in a partially broken state if requested
-        raise
-
-if failed_routers:
-    logger.error(f"⚠️ Startup partially failed. Loaded: {len(loaded_routers)}, Failed: {len(failed_routers)}")
-else:
-    logger.info(f"✅ All {len(loaded_routers)} routers loaded successfully")
+    app.include_router(router, prefix="/api")
