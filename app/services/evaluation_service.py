@@ -224,18 +224,17 @@ class EvaluationService(CRUDService[Evaluation]):
         if needs_profile_join:
             query = query.join(Profile, Evaluation.intern_id == Profile.id)
 
-            # RBAC for TECHNICAL_LEAD: filter by batches AND by reviewer if preferred
-            # But the requirement says "evaluations by that TL"
+            # RBAC for TECHNICAL_LEAD: filter by batches
             if current_user and current_user.role == "TECHNICAL_LEAD":
                 if tl_batch_ids is None:
                     from app.core.tech_lead_utils import get_tech_lead_batch_ids
                     tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
                 
-                # Filter by evaluations performed BY this TL
-                query = query.filter(Evaluation.reviewed_by == current_user.id)
-                
                 if not tl_batch_ids:
                     return self._get_empty_eval_stats()
+                
+                # Filter by interns in batches assigned to this TL
+                query = query.filter(Profile.batch_id.in_(tl_batch_ids))
 
             # Filter by specific batch
             if batch_id:
@@ -261,7 +260,8 @@ class EvaluationService(CRUDService[Evaluation]):
         if needs_profile_join:
             week_query = week_query.join(Profile, Evaluation.intern_id == Profile.id)
             if current_user and current_user.role == "TECHNICAL_LEAD":
-                week_query = week_query.filter(Evaluation.reviewed_by == current_user.id)
+                if tl_batch_ids:
+                    week_query = week_query.filter(Profile.batch_id.in_(tl_batch_ids))
             if batch_id:
                 week_query = week_query.filter(Profile.batch_id == batch_id)
         elif current_user and current_user.role == "ADMIN":

@@ -26,12 +26,17 @@ class DashboardService:
         start_time = time.time()
         today = date.today()
         
+        # Ensure we have fresh user data (avoid stale role/batch info)
+        db.refresh(current_user)
+        
         # Pre-fetch TL batch IDs
         tl_batch_ids = None
         if current_user.role == "TECHNICAL_LEAD":
             from app.core.tech_lead_utils import get_tech_lead_batch_ids
             tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
+            logger.info(f"Dashboard TL ID: {current_user.id}, Fetched Batch IDs: {tl_batch_ids}")
             if not tl_batch_ids:
+                logger.warning(f"Technical Lead {current_user.id} has no assigned batches. Returning empty stats.")
                 return self._get_empty_stats(today)
         
         # Use granular methods to build consolidated response
@@ -118,9 +123,8 @@ class DashboardService:
                 from app.core.tech_lead_utils import get_tech_lead_batch_ids
                 tl_batch_ids = get_tech_lead_batch_ids(db, current_user.id)
 
-            # Debug logging for Technical Lead stats
-            logger.info(f"DEBUG Dashboard TL: id={current_user.id}, assigned_batch_ids={tl_batch_ids}")
-
+            # Strict batch filtering for TL statistics
+            # Statistics MUST be calculated from TL's assigned batches
             intern_count = db.query(func.count(Profile.id)).filter(
                 Profile.role == "INTERN", 
                 Profile.is_active == True,
@@ -135,6 +139,8 @@ class DashboardService:
                 Profile.batch_id.in_(tl_batch_ids) if tl_batch_ids else False
             ).scalar() if tl_batch_ids else 0
 
+            # Debug logging for Technical Lead stats as requested
+            logger.info(f"DEBUG Dashboard TL: id={current_user.id}, assigned_batch_ids={tl_batch_ids}")
             logger.info(f"DEBUG Dashboard TL counts: interns={intern_count}, submissions={submission_count}, evaluations={evaluation_count}")
 
             return {
@@ -157,7 +163,6 @@ class DashboardService:
             }
         
         elif current_user.role == "INTERN":
-            from sqlalchemy import or_
             from app.utils.role_utils import normalize_role
             normalized_intern_role = normalize_role(current_user.intern_role)
             
