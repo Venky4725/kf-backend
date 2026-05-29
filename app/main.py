@@ -98,7 +98,7 @@ register_error_handlers(app)
 origins = []
 
 # Add production frontend
-origins.append("https://fr-beige-ten.vercel.app")
+origins.append("https://kf-frontend-azure.vercel.app")
 
 # Add local development origins
 origins.extend([
