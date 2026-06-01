@@ -197,8 +197,34 @@ async def upload_csv(
     # Read file content
     try:
         contents = await file.read()
-        decoded = contents.decode('utf-8')
-        csv_reader = csv.DictReader(io.StringIO(decoded))
+        # Decode with utf-8-sig to correctly handle UTF-8 BOM
+        decoded = contents.decode('utf-8-sig')
+        
+        # Header normalization mapping
+        HEADER_MAPPING = {
+            "name": "name", "student_name": "name", "student name": "name",
+            "email": "email", "email_address": "email", "email address": "email",
+            "tech_stack": "tech_stack", "tech stack": "tech_stack", "technology": "tech_stack", "role": "tech_stack",
+            "batch_name": "batch_name", "batch name": "batch_name", "batch": "batch_name"
+        }
+        
+        csv_file = io.StringIO(decoded)
+        reader = csv.reader(csv_file)
+        try:
+            raw_headers = next(reader)
+        except StopIteration:
+            raise Exception("Empty CSV file")
+            
+        normalized_headers = []
+        for h in raw_headers:
+            if h:
+                # Strip spaces and convert to lowercase for matching
+                clean_h = h.strip().lower()
+                normalized_headers.append(HEADER_MAPPING.get(clean_h, clean_h))
+            else:
+                normalized_headers.append(h)
+                
+        csv_reader = csv.DictReader(csv_file, fieldnames=normalized_headers)
     except Exception as e:
         logger.error(f"Error reading CSV file: {e}")
         from fastapi import HTTPException
@@ -208,7 +234,8 @@ async def upload_csv(
         )
     
     created = 0
-    skipped = 0
+    updated = 0
+    failed = 0
     errors = []
     
     # CRITICAL: Batch cache to avoid creating duplicate batches
@@ -217,37 +244,32 @@ async def upload_csv(
     for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (header is row 1)
         try:
             # Validate required fields (name, email, batch_name)
-            if not row.get("name") or not row["name"].strip():
-                skipped += 1
-                errors.append(f"Row {row_num}: Missing name")
+            name_val = row.get("name", "")
+            if not name_val or not str(name_val).strip():
+                failed += 1
+                errors.append(f"Row {row_num}: Required column 'name' not found. Supported headers: name, Name, student_name")
                 continue
             
-            if not row.get("email") or not row["email"].strip():
-                skipped += 1
-                errors.append(f"Row {row_num}: Missing email")
+            email_val = row.get("email", "")
+            if not email_val or not str(email_val).strip():
+                failed += 1
+                errors.append(f"Row {row_num}: Required column 'email' not found. Supported headers: email, Email, email_address")
                 continue
             
             # CRITICAL: Validate batch_name is present
-            if not row.get("batch_name") or not row["batch_name"].strip():
-                skipped += 1
-                errors.append(f"Row {row_num}: Missing batch_name")
+            batch_val = row.get("batch_name", "")
+            if not batch_val or not str(batch_val).strip():
+                failed += 1
+                errors.append(f"Row {row_num}: Required column 'batch_name' not found. Supported headers: batch_name, Batch Name, batch")
                 logger.warning(f"Row {row_num} skipped: Missing batch_name")
                 continue
             
             # Normalize data
-            name = row["name"].strip()
-            email = row["email"].strip().lower()
-            tech_stack = row.get("tech_stack", "").strip() or None
-            batch_name = row["batch_name"].strip()
+            name = str(name_val).strip()
+            email = str(email_val).strip().lower()
+            tech_stack = str(row.get("tech_stack", "") or "").strip() or None
+            batch_name = str(batch_val).strip()
             batch_name_lower = batch_name.lower()
-            
-            # Check for duplicate email (skip if exists)
-            existing_profile = db.query(Profile).filter(Profile.email == email).first()
-            if existing_profile:
-                skipped += 1
-                errors.append(f"Row {row_num}: Email '{email}' already exists")
-                logger.warning(f"Row {row_num} skipped: Duplicate email {email}")
-                continue
             
             # Get or create batch (with caching)
             if batch_name_lower in batch_cache:
@@ -278,35 +300,56 @@ async def upload_csv(
                 
                 # Cache the batch for reuse
                 batch_cache[batch_name_lower] = batch
-            
-            # Create profile with INTERN role
-            profile_data = ProfileCreate(
-                name=name,
-                email=email,
-                role="INTERN",
-                tech_stack=tech_stack,
-                batch_name=batch_name
-            )
-            
-            # Create profile using service (handles password, validation, etc.)
-            profile_service.create_profile(db, profile_data, current_user)
-            created += 1
-            logger.info(f"Row {row_num}: Created INTERN profile for {email} in batch '{batch_name}'")
+
+            # Check for duplicate email (UPSERT logic)
+            existing_profile = db.query(Profile).filter(Profile.email == email).first()
+            if existing_profile:
+                # Update existing profile
+                existing_profile.name = name
+                existing_profile.tech_stack = tech_stack
+                existing_profile.batch_id = batch.id
+                
+                # Automatically update intern_role if tech_stack is provided
+                if tech_stack:
+                    normalized_stack = tech_stack.strip().upper()
+                    if normalized_stack in {"AIML", "AI/ML", "AI-ML"}:
+                        existing_profile.intern_role = "AI/ML"
+                    elif normalized_stack in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
+                        existing_profile.intern_role = "FULLSTACK"
+                
+                db.commit()
+                updated += 1
+                logger.info(f"Row {row_num}: Updated existing profile {email} to batch '{batch_name}'")
+            else:
+                # Create profile with INTERN role
+                profile_data = ProfileCreate(
+                    name=name,
+                    email=email,
+                    role="INTERN",
+                    tech_stack=tech_stack,
+                    batch_name=batch_name
+                )
+                
+                # Create profile using service (handles password, validation, etc.)
+                profile_service.create_profile(db, profile_data, current_user)
+                created += 1
+                logger.info(f"Row {row_num}: Created INTERN profile for {email} in batch '{batch_name}'")
             
         except Exception as e:
             # CRITICAL: Rollback the failed transaction to prevent session corruption
             # This ensures subsequent rows can still be processed
             db.rollback()
-            skipped += 1
+            failed += 1
             error_msg = f"Row {row_num}: {str(e)}"
             errors.append(error_msg)
             logger.error(error_msg)
             continue
     
-    logger.info(f"CSV upload complete: {created} created, {skipped} skipped, {len(batch_cache)} batches used")
+    logger.info(f"CSV upload complete: {created} created, {updated} updated, {failed} failed, {len(batch_cache)} batches used")
     
     return {
         "created": created,
-        "skipped": skipped,
+        "updated": updated,
+        "failed": failed,
         "errors": errors[:20]  # Limit to first 20 errors
     }
