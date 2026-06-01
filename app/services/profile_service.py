@@ -159,6 +159,13 @@ class ProfileService(CRUDService[Profile]):
         
         logger = logging.getLogger(__name__)
         
+        # Log all incoming filter parameters
+        logger.info(f"=== list_profiles called ===")
+        logger.info(f"Filters: role={role}, intern_role={intern_role}, batch_id={batch_id}, tech_stack={tech_stack}")
+        logger.info(f"Search: name={search_name}, email={search_email}")
+        logger.info(f"Pagination: skip={skip}, limit={limit}")
+        logger.info(f"Current user: {current_user.id if current_user else None} ({current_user.role if current_user else None})")
+        
         # Base query - exclude password_hash from listings
         query = db.query(Profile).options(load_only(
             Profile.id, Profile.name, Profile.email, Profile.role, 
@@ -223,7 +230,10 @@ class ProfileService(CRUDService[Profile]):
         
         # Apply intern_role filter
         if intern_role:
-            query = query.filter(Profile.intern_role == intern_role.strip())
+            from app.utils.role_utils import normalize_role
+            normalized_intern_role = normalize_role(intern_role)
+            logger.info(f"Filtering by intern_role: '{intern_role}' -> normalized: '{normalized_intern_role}'")
+            query = query.filter(Profile.intern_role == normalized_intern_role)
         
         # Apply batch_id filter
         if batch_id:
@@ -237,7 +247,12 @@ class ProfileService(CRUDService[Profile]):
             query = query.filter(Profile.email.ilike(f"%{search_email}%"))
         
         if tech_stack:
-            query = query.filter(Profile.tech_stack.ilike(tech_stack))
+            # CRITICAL FIX: Filter by normalized intern_role instead of raw tech_stack
+            # This ensures FULLSTACK matches "Full Stack", "MERN Stack", etc.
+            from app.utils.role_utils import normalize_role
+            normalized_tech_stack = normalize_role(tech_stack)
+            logger.info(f"Filtering by tech_stack: '{tech_stack}' -> normalized: '{normalized_tech_stack}'")
+            query = query.filter(Profile.intern_role == normalized_tech_stack)
         
         # Apply sorting
         VALID_SORT_FIELDS = {"name", "email", "tech_stack", "batch"}
@@ -259,7 +274,14 @@ class ProfileService(CRUDService[Profile]):
             query = query.order_by(Profile.created_at.desc())
         
         # Apply pagination and return
-        return query.offset(skip).limit(limit).all()
+        results = query.offset(skip).limit(limit).all()
+        
+        # Log results for debugging
+        logger.info(f"=== Query returned {len(results)} profiles ===")
+        for profile in results:
+            logger.info(f"  - {profile.name} | Role: {profile.role} | Intern Role: {profile.intern_role} | Tech Stack: {profile.tech_stack} | Batch: {profile.batch_id}")
+        
+        return results
 
     def update_profile(self, db: Session, profile_id: UUID, payload: ProfileUpdate, current_user=None) -> Profile:
         import logging
