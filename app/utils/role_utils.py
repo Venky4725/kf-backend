@@ -2,26 +2,24 @@ def normalize_role(role: str | None) -> str:
     """
     Normalizes role strings to standard formats:
     AI/ML -> AIML
-    ai-ml -> AIML
     Full Stack -> FULLSTACK
-    fullstack -> FULLSTACK
-    empty/null/GENERAL/UNSPECIFIED -> ALL
+    empty/null/GENERAL/UNSPECIFIED -> GENERAL
     """
     if not role:
-        return "ALL"
+        return "GENERAL"
     
-    role = role.strip().upper()
+    role_upper = role.strip().upper()
     
     # Handle variations of AIML
-    if role in ("AI/ML", "AI-ML", "AIML", "AI_ML", "AI / ML"):
+    if any(var in role_upper for var in ("AI/ML", "AI-ML", "AIML", "AI_ML", "AI ML", "ARTIFICIAL INTELLIGENCE", "MACHINE LEARNING", "DATA SCIENCE")):
         return "AIML"
     
     # Handle variations of FULLSTACK
-    if role in ("FULL STACK", "FULLSTACK", "FULL-STACK", "FULL_STACK"):
+    if any(var in role_upper for var in ("FULL STACK", "FULLSTACK", "FULL-STACK", "FULL_STACK", "FULLSTACK", "MERN STACK", "DJANGO FULL STACK")):
         return "FULLSTACK"
         
-    # Handle variations of ALL
-    if role in ("GENERAL", "UNSPECIFIED", "NULL", "NONE", "ALL"):
-        return "ALL"
+    # Handle variations of GENERAL
+    if role_upper in ("GENERAL", "UNSPECIFIED", "NULL", "NONE", "ALL"):
+        return "GENERAL"
         
-    return role
+    return "GENERAL"

@@ -24,7 +24,7 @@ class RoadmapEntryResponse(RoadmapEntryBase):
 class WeeklyRoadmapBase(BaseModel):
     title: str
     batch_id: UUID
-    role: str = Field(default="ALL", validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
+    role: str = Field(default="GENERAL", validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
 
     model_config = ConfigDict(populate_by_name=True)
 

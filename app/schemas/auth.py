@@ -58,14 +58,12 @@ class AdminCreateUserRequest(BaseModel):
     def validate_intern_role(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
+        from app.utils.role_utils import normalize_role
+        normalized = normalize_role(v)
+        if normalized in {"AIML", "FULLSTACK"}:
+            return normalized
         
-        normalized = v.strip().upper()
-        if normalized in {"AIML", "AI/ML", "AI-ML"}:
-            return "AI/ML"
-        elif normalized in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-            return "FULLSTACK"
-        
-        raise ValueError('Intern role must be either AI/ML or FULLSTACK')
+        raise ValueError('Intern role must be either AIML or FULLSTACK')
 
 
 class MessageResponse(BaseModel):

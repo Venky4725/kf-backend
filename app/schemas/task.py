@@ -23,7 +23,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     batch_id: UUID
     assigned_to: UUID | None = None  # NEW
-    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role")) # AI/ML, FULLSTACK
+    role: str | None = Field(default=None, validation_alias=AliasChoices("role", "tech_stack", "intern_role"))
     due_date: date | None = None
     priority: str | None = "MEDIUM"
     status: str | None = "OPEN"

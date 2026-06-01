@@ -14,7 +14,7 @@ class WeeklyRoadmap(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
     batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=False)
-    role = Column(String, nullable=False, server_default="ALL") # AIML, FULLSTACK, ALL
+    role = Column(String, nullable=False, server_default="GENERAL") # AIML, FULLSTACK, GENERAL
     created_by = Column(UUID(as_uuid=True), ForeignKey("profiles.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

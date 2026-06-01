@@ -113,11 +113,10 @@ class ProfileService(CRUDService[Profile]):
         # Automatically populate intern_role from tech_stack if missing (for interns)
         intern_role = payload.intern_role
         if role == "INTERN" and not intern_role and payload.tech_stack:
-            normalized_stack = payload.tech_stack.strip().upper()
-            if normalized_stack in {"AIML", "AI/ML", "AI-ML"}:
-                intern_role = "AI/ML"
-            elif normalized_stack in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-                intern_role = "FULLSTACK"
+            from app.utils.role_utils import normalize_role
+            normalized = normalize_role(payload.tech_stack)
+            if normalized in {"AIML", "FULLSTACK"}:
+                intern_role = normalized
 
         logger.info(f"Creating profile: {payload.name} ({role}) with batch_id={batch_id}")
         return self.create(

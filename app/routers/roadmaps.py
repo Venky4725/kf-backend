@@ -76,7 +76,7 @@ def list_roadmaps(
             WeeklyRoadmap.batch_id == effective_batch_id,
             or_(
                 WeeklyRoadmap.role == normalized_intern_role,
-                WeeklyRoadmap.role == "ALL"
+                WeeklyRoadmap.role.in_(["GENERAL", "ALL"])
             )
         )
         return query.order_by(WeeklyRoadmap.created_at.desc()).all()
@@ -107,7 +107,7 @@ def get_roadmap(
         if roadmap.role:
             from app.utils.role_utils import normalize_role
             normalized_intern_role = normalize_role(current_user.intern_role)
-            if roadmap.role not in (normalized_intern_role, "ALL"):
+            if roadmap.role not in (normalized_intern_role, "GENERAL", "ALL"):
                  raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only access roadmaps for your specific role"

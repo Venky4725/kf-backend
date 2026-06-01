@@ -311,11 +311,10 @@ async def upload_csv(
                 
                 # Automatically update intern_role if tech_stack is provided
                 if tech_stack:
-                    normalized_stack = tech_stack.strip().upper()
-                    if normalized_stack in {"AIML", "AI/ML", "AI-ML"}:
-                        existing_profile.intern_role = "AI/ML"
-                    elif normalized_stack in {"FULL STACK", "FULLSTACK", "FULL-STACK"}:
-                        existing_profile.intern_role = "FULLSTACK"
+                    from app.utils.role_utils import normalize_role
+                    normalized = normalize_role(tech_stack)
+                    if normalized in {"AIML", "FULLSTACK"}:
+                        existing_profile.intern_role = normalized
                 
                 db.commit()
                 updated += 1

@@ -324,7 +324,7 @@ class TaskService(CRUDService[Task]):
                     or_(
                         Task.assigned_to == current_user.id,
                         Task.role == normalized_intern_role,
-                        (Task.assigned_to == None) & (Task.role == "ALL")
+                        (Task.assigned_to == None) & (Task.role.in_(["GENERAL", "ALL"]))
                     )
                 )
 
